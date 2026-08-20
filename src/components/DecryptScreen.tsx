@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, Sparkles, Clock, RefreshCw, Flame } from 'lucide-react';
 import { decryptMessage, unpackPayload, bytesToBase64 } from '../crypto/crypto';
 import { decodeQRCodeFromImageData } from '../qr/qr';
+import { decodeStegoFromImageData } from '../stego/stego';
+import { Card3DTilt } from './Card3DTilt';
+import { CryptoAnimationOverlay } from './CryptoAnimationOverlay';
 
 export const DecryptScreen: React.FC = () => {
   // Navigation / Camera states
@@ -177,8 +180,11 @@ export const DecryptScreen: React.FC = () => {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       
-      // Decode QR
-      const decodedPayload = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
+      // Decode QR code or Stego payload
+      let decodedPayload = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
+      if (!decodedPayload) {
+        decodedPayload = decodeStegoFromImageData(imgData.data);
+      }
       
       if (decodedPayload) {
         // Success! Stop camera and load payload
@@ -213,12 +219,18 @@ export const DecryptScreen: React.FC = () => {
         if (ctx) {
           ctx.drawImage(img, 0, 0);
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const decoded = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
+          
+          // Try QR code decoding first, then fall back to Stego decoding
+          let decoded = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
+          if (!decoded) {
+            decoded = decodeStegoFromImageData(imgData.data);
+          }
+
           if (decoded) {
             const b64 = bytesToBase64(decoded);
             processDecodedPayload(decoded, b64);
           } else {
-            setDecryptionError("Could not find any readable QR code in this image.");
+            setDecryptionError("Could not find any readable QR code or hidden Stego payload in this image.");
           }
         }
       };
@@ -310,270 +322,264 @@ export const DecryptScreen: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in p-2">
-      <div className="glass-panel rounded-3xl p-6 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
-            <Scan className="h-5 w-5 text-indigo-500" />
-            <span>Decrypt & Scan</span>
-          </h2>
-          {rawPayload && (
-            <button
-              onClick={resetScanner}
-              className="text-xs text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1.5"
-            >
-              <RefreshCw className="h-3 w-3" />
-              <span>Scan Another</span>
-            </button>
-          )}
-        </div>
-
-        {/* Phase 1: Camera Scanner & Upload Selection */}
-        {!rawPayload && (
-          <div className="space-y-6">
-            {/* Live Camera Scanner Box */}
-            {isScanning ? (
-              <div className="relative rounded-2xl overflow-hidden border border-slate-200/50 dark:border-slate-800/50 aspect-video bg-black max-w-[500px] mx-auto shadow-md">
-                <video ref={videoRef} className="w-full h-full object-cover" />
-                {/* Target overlay indicator */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-[180px] h-[180px] md:w-[220px] md:w-[220px] border-2 border-indigo-500 rounded-3xl relative animate-pulse flex items-center justify-center">
-                    <div className="absolute inset-0 border border-white/20 rounded-3xl" />
-                    <span className="text-[10px] text-white font-mono bg-black/60 px-2 py-0.5 rounded-full">
-                      ALIGN QR CODE
-                    </span>
-                  </div>
-                </div>
-                {/* Stop Action */}
-                <button
-                  onClick={stopCamera}
-                  className="absolute bottom-4 left-1/2 -translate-x-1/2 py-1.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-semibold shadow-md transition-colors"
-                >
-                  Cancel Scan
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-4">
-                <button
-                  onClick={startCamera}
-                  className="py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-semibold text-sm shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 flex items-center space-x-2 transition-all duration-200 cursor-pointer"
-                >
-                  <Scan className="h-4 w-4" />
-                  <span>Start Camera Scanner</span>
-                </button>
-                {cameraPermissionError && (
-                  <p className="text-[10px] text-red-500 font-medium mt-2 text-center max-w-[280px]">
-                    {cameraPermissionError}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Separator */}
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-slate-200/50 dark:border-slate-800/50"></div>
-              <span className="flex-shrink mx-4 text-slate-400 text-xs font-semibold uppercase tracking-wider font-mono">OR</span>
-              <div className="flex-grow border-t border-slate-200/50 dark:border-slate-800/50"></div>
-            </div>
-
-            {/* File Dropzone */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all duration-200 ${
-                isDragging
-                  ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-950/20'
-              }`}
-            >
-              <Upload className="h-10 w-10 text-slate-400 mb-3" />
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Drag and drop your QR code image
-              </p>
-              <p className="text-xs text-slate-400 mb-4">
-                Supports PNG, JPG, or SVG files
-              </p>
-              <label className="py-2 px-4 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer shadow-sm">
-                <span>Browse Files</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
-        )}
-
-        {/* Phase 2: Decrypted Payload Configuration Input */}
-        {rawPayload && payloadMetadata && !decryptedText && (
-          <div className="space-y-6 animate-slide-down max-w-[500px] mx-auto">
-            {/* Decoded QR payload info */}
-            <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-4 flex items-center justify-between">
-              <div className="space-y-1">
-                <span className="text-[10px] font-mono text-indigo-500 dark:text-indigo-400 font-semibold uppercase tracking-wider block">
-                  QR Decoded Successfully
-                </span>
-                <span className="text-xs text-slate-600 dark:text-slate-300 block">
-                  Format: {payloadMetadata.isPassphraseMode ? 'Passphrase Protected' : 'Pre-Shared Key Protected'}
-                </span>
-              </div>
-              {payloadMetadata.isBurnAfterReading && (
-                <span className="bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center space-x-1">
-                  <Flame className="h-3 w-3" />
-                  <span>Burn On Scan</span>
-                </span>
-              )}
-            </div>
-
-            {/* Burn Alert Warning */}
-            {showBurnWarning && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-700 dark:text-red-300 flex items-start space-x-3">
-                <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0 text-red-500" />
-                <div>
-                  <p className="font-bold mb-1">⚠️ Burn Warning Detected!</p>
-                  <p>
-                    This payload has already been decrypted on this device in the past.
-                    If this is a secure single-use "Burn after reading" message, it might have been read or intercepted.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Password Input field */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                {payloadMetadata.isPassphraseMode ? 'Decryption Passphrase' : 'AES Pre-Shared Key (Hex)'}
-              </label>
-              <div className="relative">
-                <input
-                  type={payloadMetadata.isPassphraseMode ? "password" : "text"}
-                  value={secretInput}
-                  onChange={(e) => setSecretInput(e.target.value)}
-                  placeholder={payloadMetadata.isPassphraseMode ? "Enter passphrase..." : "Enter 64 hex characters..."}
-                  className="w-full glass-input rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
-                />
-                <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
-              </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-3">
+    <div className="max-w-4xl mx-auto animate-fade-in p-2">
+      <Card3DTilt>
+        <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
+              <Scan className="h-5 w-5 text-indigo-500" />
+              <span>Decrypt & Scan</span>
+            </h2>
+            {rawPayload && (
               <button
                 onClick={resetScanner}
-                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer text-center"
+                className="text-xs text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1.5"
               >
-                Cancel
+                <RefreshCw className="h-3 w-3" />
+                <span>Scan Another</span>
               </button>
-              <button
-                onClick={handleDecrypt}
-                disabled={isDecrypting || !secretInput}
-                className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/15 hover:shadow-indigo-600/25 flex items-center justify-center space-x-2 transition-all duration-200 cursor-pointer"
-              >
-                {isDecrypting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Decrypting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Shield className="h-3.5 w-3.5" />
-                    <span>Decrypt QR</span>
-                  </>
-                )}
-              </button>
-            </div>
+            )}
           </div>
-        )}
 
-        {/* Errors display */}
-        {decryptionError && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 max-w-[500px] mx-auto flex items-start space-x-2 text-left animate-shake">
-            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span>{decryptionError}</span>
-          </div>
-        )}
-
-        {/* Phase 3: Success state - Decrypted text output */}
-        {decryptedText && (
-          <div className="space-y-6 animate-slide-down border-t border-slate-200/50 dark:border-slate-800/50 pt-6 max-w-[500px] mx-auto">
-            <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-4 flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
-                <Sparkles className="h-5 w-5" />
-                <span className="text-sm font-semibold">Decrypted plaintext message</span>
-              </div>
-              
-              {/* Countdown badge */}
-              {timeLeft !== null && (
-                <div className="flex items-center space-x-1 text-[10px] font-mono text-slate-500 dark:text-slate-400 font-semibold bg-slate-100 dark:bg-slate-900 px-2 py-0.5 rounded-md">
-                  <Clock className="h-3 w-3 text-indigo-500" />
-                  <span>Clears in {timeLeft}s</span>
+          {/* Phase 1: Camera Scanner & Upload Selection */}
+          {!rawPayload && (
+            <div className="space-y-6">
+              {/* Live Camera Scanner Box */}
+              {isScanning ? (
+                <div className="relative rounded-3xl overflow-hidden border-2 border-indigo-500/30 aspect-video bg-black max-w-[500px] mx-auto shadow-2xl">
+                  <video ref={videoRef} className="w-full h-full object-cover" />
+                  {/* Target overlay indicator */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-[180px] h-[180px] md:w-[220px] md:h-[220px] border-2 border-indigo-500 rounded-3xl relative animate-pulse flex items-center justify-center shadow-lg shadow-indigo-500/40">
+                      <div className="absolute inset-0 border border-white/20 rounded-3xl" />
+                      <span className="text-[10px] text-white font-mono bg-black/70 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
+                        ALIGN IMAGE OR QR CODE
+                      </span>
+                    </div>
+                  </div>
+                  {/* Stop Action */}
+                  <button
+                    onClick={stopCamera}
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 py-2 px-5 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-bold shadow-lg transition-all transform hover:scale-105"
+                  >
+                    Cancel Scan
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-4">
+                  <button
+                    onClick={startCamera}
+                    className="py-3.5 px-7 btn-3d-primary rounded-2xl font-bold text-sm flex items-center space-x-2.5 cursor-pointer shadow-xl"
+                  >
+                    <Scan className="h-5 w-5" />
+                    <span>Start Camera Scanner</span>
+                  </button>
+                  {cameraPermissionError && (
+                    <p className="text-[10px] text-red-500 font-medium mt-2 text-center max-w-[280px]">
+                      {cameraPermissionError}
+                    </p>
+                  )}
                 </div>
               )}
-            </div>
 
-            {/* Plaintext Box */}
-            <div className="relative border border-slate-200/50 dark:border-slate-800/50 rounded-2xl p-5 bg-slate-50/50 dark:bg-slate-950/40 min-h-[120px] max-h-[300px] overflow-y-auto font-sans text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap select-text break-words">
-              {decryptedText}
-            </div>
-
-            {/* Timer setting & copy controls */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              {/* Change clear time */}
-              <div className="flex items-center space-x-2">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Auto-clear timer:
-                </span>
-                <select
-                  value={clearTimer}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setClearTimer(val);
-                    if (timeLeft !== null) setTimeLeft(val);
-                  }}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs p-1 text-slate-600 dark:text-slate-400 outline-none"
-                >
-                  <option value={10}>10s</option>
-                  <option value={30}>30s</option>
-                  <option value={60}>60s</option>
-                  <option value={120}>2m</option>
-                  <option value={300}>5m</option>
-                </select>
+              {/* Separator */}
+              <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-slate-300/40 dark:border-slate-800/80"></div>
+                <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-wider font-mono">OR</span>
+                <div className="flex-grow border-t border-slate-300/40 dark:border-slate-800/80"></div>
               </div>
 
-              {/* Copy and Wipe buttons */}
-              <div className="flex items-center space-x-2">
+              {/* File Dropzone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all duration-300 ${
+                  isDragging
+                    ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
+                    : 'border-slate-300 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 bg-slate-50/50 dark:bg-slate-950/30'
+                }`}
+              >
+                <div className="p-4 rounded-2xl bg-indigo-500/10 text-indigo-500 mb-3">
+                  <Upload className="h-8 w-8" />
+                </div>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">
+                  Drag and drop your QR Code or Stego Image
+                </p>
+                <p className="text-xs text-slate-400 mb-5 max-w-[320px]">
+                  Supports PNG, JPG, or SVG files. Stego payloads are automatically detected!
+                </p>
+                <label className="py-2.5 px-5 btn-3d-secondary rounded-2xl text-xs font-bold cursor-pointer inline-flex items-center space-x-2">
+                  <span>Browse Files</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Phase 2: Decrypted Payload Configuration Input */}
+          {rawPayload && payloadMetadata && !decryptedText && (
+            <div className="space-y-6 animate-slide-down max-w-[500px] mx-auto relative p-1 overflow-hidden">
+              <CryptoAnimationOverlay type="decrypt" isActive={isDecrypting} statusText="Verifying AES-GCM Tag & Decrypting..." />
+              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-indigo-500 dark:text-indigo-400 font-extrabold uppercase tracking-wider block">
+                    Payload Detected & Loaded
+                  </span>
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">
+                    Mode: {payloadMetadata.isPassphraseMode ? 'Passphrase Protected' : 'Pre-Shared Key Protected'}
+                  </span>
+                </div>
+                {payloadMetadata.isBurnAfterReading && (
+                  <span className="bg-orange-500/20 text-orange-600 dark:text-orange-400 text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider flex items-center space-x-1 border border-orange-500/30">
+                    <Flame className="h-3.5 w-3.5" />
+                    <span>Burn On Scan</span>
+                  </span>
+                )}
+              </div>
+
+              {showBurnWarning && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-700 dark:text-red-300 flex items-start space-x-3 shadow-sm">
+                  <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0 text-red-500" />
+                  <div>
+                    <p className="font-bold mb-1">⚠️ Burn Warning Detected!</p>
+                    <p>
+                      This payload has already been decrypted on this device in the past.
+                      If this is a secure single-use "Burn after reading" message, it might have been read or intercepted.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  {payloadMetadata.isPassphraseMode ? 'Decryption Passphrase' : 'AES Pre-Shared Key (Hex)'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={payloadMetadata.isPassphraseMode ? "password" : "text"}
+                    value={secretInput}
+                    onChange={(e) => setSecretInput(e.target.value)}
+                    placeholder={payloadMetadata.isPassphraseMode ? "Enter passphrase..." : "Enter 64 hex characters..."}
+                    className="w-full glass-input-3d rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
+                  />
+                  <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={clearDecryptedResult}
-                  className="py-2 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                  onClick={resetScanner}
+                  className="py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold cursor-pointer text-center"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Wipe Now</span>
+                  Cancel
                 </button>
                 <button
-                  onClick={copyToClipboard}
-                  className="py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/25 transition-all duration-150"
+                  onClick={handleDecrypt}
+                  disabled={isDecrypting || !secretInput}
+                  className="py-3 px-4 btn-3d-primary disabled:opacity-50 rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
                 >
-                  {copiedText ? (
+                  {isDecrypting ? (
                     <>
-                      <Check className="h-3.5 w-3.5" />
-                      <span>Copied!</span>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>Decrypting...</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>Copy Message</span>
+                      <Shield className="h-4 w-4" />
+                      <span>Decrypt Payload</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
+          {decryptionError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 max-w-[500px] mx-auto flex items-start space-x-2 text-left animate-shake shadow-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>{decryptionError}</span>
+            </div>
+          )}
+
+          {/* Phase 3: Success state - Decrypted text output */}
+          {decryptedText && (
+            <div className="space-y-6 animate-slide-down border-t border-slate-200/50 dark:border-slate-800/50 pt-6 max-w-[500px] mx-auto">
+              <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
+                  <Sparkles className="h-5 w-5" />
+                  <span className="text-sm font-bold">Decrypted Plaintext Message</span>
+                </div>
+                
+                {timeLeft !== null && (
+                  <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-300 font-bold bg-white/80 dark:bg-slate-900 px-2.5 py-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                    <Clock className="h-3.5 w-3.5 text-indigo-500 animate-pulse" />
+                    <span>{timeLeft}s</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-5 bg-white/70 dark:bg-slate-950/60 shadow-xl min-h-[140px] max-h-[300px] overflow-y-auto font-sans text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap select-text break-words">
+                {decryptedText}
+              </div>
+
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Auto-clear timer:
+                  </span>
+                  <select
+                    value={clearTimer}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setClearTimer(val);
+                      if (timeLeft !== null) setTimeLeft(val);
+                    }}
+                    className="bg-white dark:bg-slate-900 border border-slate-300/60 dark:border-slate-800 rounded-xl text-xs p-1.5 font-bold text-slate-700 dark:text-slate-300 outline-none shadow-inner"
+                  >
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                    <option value={60}>60s</option>
+                    <option value={120}>2m</option>
+                    <option value={300}>5m</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={clearDecryptedResult}
+                    className="py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors border border-red-500/20"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Wipe Now</span>
+                  </button>
+                  <button
+                    onClick={copyToClipboard}
+                    className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5"
+                  >
+                    {copiedText ? (
+                      <>
+                        <Check className="h-4 w-4 text-green-300" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        <span>Copy Message</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card3DTilt>
       {/* Hidden canvas for video frame extraction */}
       <canvas ref={canvasRef} className="hidden" />
     </div>

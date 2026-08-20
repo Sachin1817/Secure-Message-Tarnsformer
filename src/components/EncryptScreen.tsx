@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode } from 'lucide-react';
+import { Shield, Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { encryptMessage, generatePreSharedKey, deriveKeyFromPassphrase, packPayload } from '../crypto/crypto';
 import { generateQRCode } from '../qr/qr';
+import { encodeStegoImage, generateRandomCoverImage } from '../stego/stego';
+import { Card3DTilt } from './Card3DTilt';
+import { CryptoAnimationOverlay } from './CryptoAnimationOverlay';
 
 export const EncryptScreen: React.FC = () => {
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'passphrase' | 'preshared'>('passphrase');
   
+  // Carrier State: QR Code vs Steganography Image
+  const [carrier, setCarrier] = useState<'qr' | 'stego'>('qr');
+  const [stegoSource, setStegoSource] = useState<'random' | 'custom'>('random');
+  const [customCoverSrc, setCustomCoverSrc] = useState<string | null>(null);
+  const [randomCoverSrc, setRandomCoverSrc] = useState<string | null>(null);
+
   // Passphrase Mode States
   const [passphrase, setPassphrase] = useState('');
   const [kdfMethod, setKdfMethod] = useState<'argon2id' | 'pbkdf2'>('argon2id');
@@ -20,16 +29,16 @@ export const EncryptScreen: React.FC = () => {
   const [errorCorrection, setErrorCorrection] = useState<'L' | 'M' | 'Q' | 'H'>('M');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrSvgContent, setQrSvgContent] = useState<string | null>(null);
+  const [stegoDataUrl, setStegoDataUrl] = useState<string | null>(null);
   
   const [isComputingKey, setIsComputingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // UI Success Flags
   const [copiedKey, setCopiedKey] = useState(false);
-  const [copiedQR, setCopiedQR] = useState(false);
+  const [copiedResult, setCopiedResult] = useState(false);
 
   // Performance Optimization: Cache the derived CryptoKey
-  // This allows real-time QR updates as the user types their message without freezing the browser.
   const cachedKeyRef = useRef<{
     passphrase: string;
     kdf: 'argon2id' | 'pbkdf2';
@@ -37,11 +46,17 @@ export const EncryptScreen: React.FC = () => {
     key: CryptoKey;
   } | null>(null);
 
-  // Generate a random Pre-Shared Key when the screen loads or when mode is switched
+  // Initialize pre-shared key
   const initPresharedKey = () => {
     const key = generatePreSharedKey();
     setPresharedKey(key);
     setShowPresharedKeyWarning(true);
+  };
+
+  // Generate initial random cover image for stego mode
+  const regenerateRandomCover = () => {
+    const newCover = generateRandomCoverImage(600, 600);
+    setRandomCoverSrc(newCover);
   };
 
   useEffect(() => {
@@ -50,25 +65,32 @@ export const EncryptScreen: React.FC = () => {
     }
   }, [mode]);
 
+  useEffect(() => {
+    if (!randomCoverSrc) {
+      regenerateRandomCover();
+    }
+  }, []);
+
   // Debounced/Triggered Generation
   useEffect(() => {
     let active = true;
     const generateTimer = setTimeout(() => {
       if (active) {
-        triggerQRGeneration();
+        triggerGeneration();
       }
-    }, mode === 'passphrase' ? 400 : 100); // Higher debounce when deriving passphrase keys
+    }, mode === 'passphrase' ? 400 : 100);
 
     return () => {
       active = false;
       clearTimeout(generateTimer);
     };
-  }, [message, mode, passphrase, kdfMethod, burnAfterReading, errorCorrection, presharedKey]);
+  }, [message, mode, carrier, stegoSource, customCoverSrc, randomCoverSrc, passphrase, kdfMethod, burnAfterReading, errorCorrection, presharedKey]);
 
-  const triggerQRGeneration = async () => {
+  const triggerGeneration = async () => {
     if (!message) {
       setQrDataUrl(null);
       setQrSvgContent(null);
+      setStegoDataUrl(null);
       setError(null);
       return;
     }
@@ -77,6 +99,7 @@ export const EncryptScreen: React.FC = () => {
       setError("Passphrase must be at least 8 characters long.");
       setQrDataUrl(null);
       setQrSvgContent(null);
+      setStegoDataUrl(null);
       return;
     }
 
@@ -84,6 +107,13 @@ export const EncryptScreen: React.FC = () => {
       setError("Pre-shared key must be exactly 64 hex characters (32 bytes).");
       setQrDataUrl(null);
       setQrSvgContent(null);
+      setStegoDataUrl(null);
+      return;
+    }
+
+    if (carrier === 'stego' && stegoSource === 'custom' && !customCoverSrc) {
+      setError("Please upload a cover image to hide your message inside.");
+      setStegoDataUrl(null);
       return;
     }
 
@@ -94,24 +124,16 @@ export const EncryptScreen: React.FC = () => {
       let payloadBytes: Uint8Array;
 
       if (mode === 'passphrase') {
-        // Look up key in cache, or derive a new one
-        // Note: For real-time updates as user types the *message*, salt remains fixed
-        // for that key derivation session to avoid freezing. A fresh random salt is used
-        // if they modify the passphrase or when they first load.
         let keyToUse: CryptoKey;
         const currentCache = cachedKeyRef.current;
         
         if (currentCache && currentCache.passphrase === passphrase && currentCache.kdf === kdfMethod) {
           keyToUse = currentCache.key;
         } else {
-          // Derive fresh key
           const freshSalt = crypto.getRandomValues(new Uint8Array(16));
-          // Derive with helper (handles Argon2 -> PBKDF2 fallback internally)
           const derivation = await deriveKeyFromPassphrase(passphrase, freshSalt, kdfMethod);
-          
           keyToUse = derivation.key;
           
-          // Cache it for subsequent message typing speed
           cachedKeyRef.current = {
             passphrase,
             kdf: kdfMethod,
@@ -120,8 +142,6 @@ export const EncryptScreen: React.FC = () => {
           };
         }
 
-        // Encrypt with our cached key and fresh random nonce (IV)
-        // Web Crypto encrypt
         const encoder = new TextEncoder();
         const plaintextBytes = encoder.encode(message);
         const nonce = crypto.getRandomValues(new Uint8Array(12));
@@ -140,24 +160,47 @@ export const EncryptScreen: React.FC = () => {
         
         payloadBytes = packPayload(1, modeFlag, saltBytes, nonce, encryptedData);
       } else {
-        // Pre-shared key encryption
         payloadBytes = await encryptMessage(message, presharedKey, 'preshared', kdfMethod, burnAfterReading);
       }
 
-      // Generate PNG and SVG
-      const pngUrl = await generateQRCode(payloadBytes, 'png', errorCorrection);
-      const svgSrc = await generateQRCode(payloadBytes, 'svg', errorCorrection);
-
-      setQrDataUrl(pngUrl);
-      setQrSvgContent(svgSrc);
+      if (carrier === 'qr') {
+        const pngUrl = await generateQRCode(payloadBytes, 'png', errorCorrection);
+        const svgSrc = await generateQRCode(payloadBytes, 'svg', errorCorrection);
+        setQrDataUrl(pngUrl);
+        setQrSvgContent(svgSrc);
+        setStegoDataUrl(null);
+      } else {
+        const coverToUse = stegoSource === 'custom' ? customCoverSrc : (randomCoverSrc || generateRandomCoverImage());
+        const stegoPng = await encodeStegoImage(coverToUse, payloadBytes);
+        setStegoDataUrl(stegoPng);
+        setQrDataUrl(null);
+        setQrSvgContent(null);
+      }
       setError(null);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message || "Failed to generate QR code payload.");
+      setError(err?.message || "Failed to generate payload.");
       setQrDataUrl(null);
       setQrSvgContent(null);
+      setStegoDataUrl(null);
     } finally {
       setIsComputingKey(false);
+    }
+  };
+
+  const handleCustomCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Please upload a valid image file (PNG, JPG, WebP).');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setCustomCoverSrc(evt.target?.result as string);
+        setStegoSource('custom');
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -181,347 +224,457 @@ export const EncryptScreen: React.FC = () => {
     setTimeout(() => setCopiedKey(false), 2000);
   };
 
-  const copyQRToClipboard = async () => {
-    if (!qrDataUrl) return;
+  const copyResultToClipboard = async () => {
+    const targetUrl = carrier === 'qr' ? qrDataUrl : stegoDataUrl;
+    if (!targetUrl) return;
     try {
-      const response = await fetch(qrDataUrl);
+      const response = await fetch(targetUrl);
       const blob = await response.blob();
       await navigator.clipboard.write([
         new ClipboardItem({ [blob.type]: blob })
       ]);
-      setCopiedQR(true);
-      setTimeout(() => setCopiedQR(false), 2000);
+      setCopiedResult(true);
+      setTimeout(() => setCopiedResult(false), 2000);
     } catch (err) {
       console.error("Failed to copy image:", err);
     }
   };
 
-
-  const downloadQR = (format: 'png' | 'svg') => {
-    if (format === 'png' && qrDataUrl) {
+  const downloadResult = (format: 'png' | 'svg') => {
+    if (carrier === 'qr') {
+      if (format === 'png' && qrDataUrl) {
+        const link = document.createElement('a');
+        link.href = qrDataUrl;
+        link.download = `qrcrypt-${Date.now()}.png`;
+        link.click();
+      } else if (format === 'svg' && qrSvgContent) {
+        const blob = new Blob([qrSvgContent], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `qrcrypt-${Date.now()}.svg`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } else if (stegoDataUrl) {
       const link = document.createElement('a');
-      link.href = qrDataUrl;
-      link.download = `qrcrypt-${Date.now()}.png`;
+      link.href = stegoDataUrl;
+      link.download = `stegocrypt-${Date.now()}.png`;
       link.click();
-    } else if (format === 'svg' && qrSvgContent) {
-      const blob = new Blob([qrSvgContent], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `qrcrypt-${Date.now()}.svg`;
-      link.click();
-      URL.revokeObjectURL(url);
     }
   };
 
   const strengthInfo = getPassphraseStrength(passphrase);
   const remainingBytes = Math.max(0, 1500 - message.length);
+  const activeResultUrl = carrier === 'qr' ? qrDataUrl : stegoDataUrl;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in p-2 max-w-6xl mx-auto">
       {/* Configuration controls */}
-      <div className="lg:col-span-7 space-y-6">
-        <div className="glass-panel rounded-3xl p-6 md:p-8 space-y-6">
-          <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
-            <Shield className="h-5 w-5 text-indigo-500" />
-            <span>Encrypt Message</span>
-          </h2>
+      <div className="lg:col-span-7">
+        <Card3DTilt>
+          <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-6">
+            <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
+              <Shield className="h-5 w-5 text-indigo-500" />
+              <span>Encrypt Message</span>
+            </h2>
 
-          {/* Mode Switcher */}
-          <div>
-            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-              Security Mode
-            </label>
-            <div className="grid grid-cols-2 gap-3 bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
-              <button
-                type="button"
-                onClick={() => setMode('passphrase')}
-                className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  mode === 'passphrase'
-                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                Passphrase
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('preshared')}
-                className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  mode === 'preshared'
-                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                Pre-Shared Key
-              </button>
-            </div>
-          </div>
-
-          {/* Plaintext Input */}
-          <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Plaintext Message
+            {/* Carrier Selector (QR vs Stego) */}
+            <div>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
+                Output Format (Carrier)
               </label>
-              <span className={`text-[10px] font-mono ${remainingBytes < 100 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                {remainingBytes} bytes remaining
-              </span>
+              <div className="grid grid-cols-2 gap-3 bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl border border-slate-300/40 dark:border-slate-800/80 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setCarrier('qr')}
+                  className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 transition-all duration-200 ${
+                    carrier === 'qr'
+                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <QrCode className="h-4 w-4" />
+                  <span>QR Code</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCarrier('stego')}
+                  className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 transition-all duration-200 ${
+                    carrier === 'stego'
+                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                  <span>Stego Image (Hidden)</span>
+                </button>
+              </div>
             </div>
-            <textarea
-              value={message}
-              onChange={(e) => {
-                setMessage(e.target.value);
-                // Clear cache key if text box becomes empty so next generation starts fresh
-                if (!e.target.value) cachedKeyRef.current = null;
-              }}
-              placeholder="Type your sensitive message here..."
-              rows={5}
-              className="w-full glass-input rounded-2xl p-4 text-sm font-sans resize-none"
-            />
-          </div>
 
-          {/* Passphrase Mode Panel */}
-          {mode === 'passphrase' && (
-            <div className="space-y-4 animate-slide-down">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  Passphrase
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
-                    placeholder="Enter a strong passphrase..."
-                    className="w-full glass-input rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
-                  />
-                  <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
+            {/* Stego Cover Settings */}
+            {carrier === 'stego' && (
+              <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-2xl p-4 space-y-3 animate-slide-down">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Cover Image Settings</span>
+                  </label>
+                  {stegoSource === 'random' && (
+                    <button
+                      type="button"
+                      onClick={regenerateRandomCover}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>New Random Pattern</span>
+                    </button>
+                  )}
                 </div>
-                {/* Strength Meter */}
-                {passphrase && (
-                  <div className="mt-2 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                      <span>Passphrase Strength:</span>
-                      <span>{strengthInfo.label}</span>
-                    </div>
-                    <div className="h-1 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className={`h-full transition-all duration-300 ${strengthInfo.color} ${strengthInfo.width}`} />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStegoSource('random')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-medium transition-all ${
+                      stegoSource === 'random'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    Auto-Generated Pattern
+                  </button>
+                  <label className={`py-1.5 px-3 rounded-xl text-xs font-medium text-center transition-all cursor-pointer ${
+                    stegoSource === 'custom'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <span>Upload Own Photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCustomCoverUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {stegoSource === 'custom' && customCoverSrc && (
+                  <div className="flex items-center space-x-3 pt-1">
+                    <img src={customCoverSrc} alt="Custom cover preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-800" />
+                    <div className="text-[11px] text-slate-500">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 block">Custom Cover Loaded</span>
+                      <span>Your message will be invisibly embedded in this image.</span>
                     </div>
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Advanced KDF Selector */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                  Key Derivation Function (KDF)
-                </label>
-                <div className="flex items-center space-x-6">
-                  <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="kdf"
-                      value="argon2id"
-                      checked={kdfMethod === 'argon2id'}
-                      onChange={() => setKdfMethod('argon2id')}
-                      className="text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span>Argon2id <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono">(Recommended)</span></span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="kdf"
-                      value="pbkdf2"
-                      checked={kdfMethod === 'pbkdf2'}
-                      onChange={() => setKdfMethod('pbkdf2')}
-                      className="text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span>PBKDF2-SHA256 <span className="text-[10px] text-slate-400 font-mono">(Fallback)</span></span>
-                  </label>
-                </div>
+            {/* Security Mode Switcher */}
+            <div>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
+                Security Mode
+              </label>
+              <div className="grid grid-cols-2 gap-3 bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+                <button
+                  type="button"
+                  onClick={() => setMode('passphrase')}
+                  className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    mode === 'passphrase'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Passphrase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('preshared')}
+                  className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    mode === 'preshared'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Pre-Shared Key
+                </button>
               </div>
             </div>
-          )}
 
-          {/* Pre-shared Key Mode Panel */}
-          {mode === 'preshared' && (
-            <div className="space-y-4 animate-slide-down">
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Pre-Shared AES Key
+            {/* Plaintext Input */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Plaintext Message
+                </label>
+                <span className={`text-[10px] font-mono ${remainingBytes < 100 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+                  {remainingBytes} bytes remaining
+                </span>
+              </div>
+              <textarea
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  if (!e.target.value) cachedKeyRef.current = null;
+                }}
+                placeholder="Type your sensitive message here..."
+                rows={4}
+                className="w-full glass-input-3d rounded-2xl p-4 text-sm font-sans resize-none"
+              />
+            </div>
+
+            {/* Passphrase Mode Panel */}
+            {mode === 'passphrase' && (
+              <div className="space-y-4 animate-slide-down">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                    Passphrase
                   </label>
-                  <button
-                    onClick={initPresharedKey}
-                    className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1"
-                    title="Generate New Key"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Regenerate</span>
-                  </button>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={passphrase}
+                      onChange={(e) => setPassphrase(e.target.value)}
+                      placeholder="Enter a strong passphrase..."
+                      className="w-full glass-input-3d rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
+                    />
+                    <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
+                  </div>
+                  {passphrase && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                        <span>Passphrase Strength:</span>
+                        <span>{strengthInfo.label}</span>
+                      </div>
+                      <div className="h-1 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className={`h-full transition-all duration-300 ${strengthInfo.color} ${strengthInfo.width}`} />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    readOnly
-                    value={presharedKey}
-                    className="w-full glass-input bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl py-3 pl-4 pr-12 text-xs font-mono text-indigo-600 dark:text-indigo-400 border-dashed"
-                  />
-                  <button
-                    onClick={copyKeyToClipboard}
-                    className="absolute right-3 top-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    title="Copy Key"
-                  >
-                    {copiedKey ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  </button>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
+                    Key Derivation Function (KDF)
+                  </label>
+                  <div className="flex items-center space-x-6">
+                    <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="kdf"
+                        value="argon2id"
+                        checked={kdfMethod === 'argon2id'}
+                        onChange={() => setKdfMethod('argon2id')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Argon2id <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono">(Recommended)</span></span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="kdf"
+                        value="pbkdf2"
+                        checked={kdfMethod === 'pbkdf2'}
+                        onChange={() => setKdfMethod('pbkdf2')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>PBKDF2-SHA256 <span className="text-[10px] text-slate-400 font-mono">(Fallback)</span></span>
+                    </label>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {showPresharedKeyWarning && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 flex items-start space-x-3">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
+            {/* Pre-shared Key Mode Panel */}
+            {mode === 'preshared' && (
+              <div className="space-y-4 animate-slide-down">
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Pre-Shared AES Key
+                    </label>
+                    <button
+                      onClick={initPresharedKey}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1"
+                      title="Generate New Key"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Regenerate</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      readOnly
+                      value={presharedKey}
+                      className="w-full glass-input-3d bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl py-3 pl-4 pr-12 text-xs font-mono text-indigo-600 dark:text-indigo-400 border-dashed"
+                    />
+                    <button
+                      onClick={copyKeyToClipboard}
+                      className="absolute right-3 top-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Copy Key"
+                    >
+                      {copiedKey ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {showPresharedKeyWarning && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 flex items-start space-x-3">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
+                    <div>
+                      <p className="font-bold mb-1">Make sure to copy this key!</p>
+                      <p>
+                        This pre-shared key is generated client-side and will not be stored.
+                        Copy it now and share it securely with the recipient.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Shared Options */}
+            <div className="border-t border-slate-200/50 dark:border-slate-800/50 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="flex items-center space-x-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/30 dark:border-slate-800/30 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={burnAfterReading}
+                  onChange={(e) => setBurnAfterReading(e.target.checked)}
+                  className="h-4.5 w-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div className="flex items-center space-x-2">
+                  <Flame className={`h-4 w-4 ${burnAfterReading ? 'text-orange-500' : 'text-slate-400'}`} />
                   <div>
-                    <p className="font-bold mb-1">Make sure to copy this key!</p>
-                    <p>
-                      This pre-shared key is generated client-side and will not be stored.
-                      Copy it now and share it securely with the recipient. It will not be shown again.
-                    </p>
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                      Burn After Reading
+                    </span>
+                    <span className="text-[9px] text-slate-400 block leading-tight">
+                      Alert recipient if opened multiple times
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              {carrier === 'qr' && (
+                <div className="flex flex-col justify-center">
+                  <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
+                    QR Error Correction
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl">
+                    {(['L', 'M', 'Q', 'H'] as const).map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setErrorCorrection(level)}
+                        className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                          errorCorrection === level
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                        }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Shared Options */}
-          <div className="border-t border-slate-200/50 dark:border-slate-800/50 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Burn after reading */}
-            <label className="flex items-center space-x-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/30 dark:border-slate-800/30 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={burnAfterReading}
-                onChange={(e) => setBurnAfterReading(e.target.checked)}
-                className="h-4.5 w-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <div className="flex items-center space-x-2">
-                <Flame className={`h-4 w-4 ${burnAfterReading ? 'text-orange-500' : 'text-slate-400'}`} />
-                <div>
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                    Burn After Reading
-                  </span>
-                  <span className="text-[9px] text-slate-400 block leading-tight">
-                    Alert recipient if scanned multiple times
-                  </span>
-                </div>
-              </div>
-            </label>
-
-            {/* Error correction level */}
-            <div className="flex flex-col justify-center">
-              <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                QR Error Correction
-              </label>
-              <div className="grid grid-cols-4 gap-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl">
-                {(['L', 'M', 'Q', 'H'] as const).map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => setErrorCorrection(level)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                      errorCorrection === level
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
-                    }`}
-                    title={
-                      level === 'L' ? 'Low (~7%)' :
-                      level === 'M' ? 'Medium (~15%)' :
-                      level === 'Q' ? 'Quarter (~25%)' : 'High (~30%)'
-                    }
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-        </div>
+        </Card3DTilt>
       </div>
 
-      {/* Output / QR Code Display Panel */}
-      <div className="lg:col-span-5 space-y-6">
-        <div className="glass-panel rounded-3xl p-6 md:p-8 flex flex-col items-center justify-center text-center space-y-6 min-h-[420px]">
-          {/* Header */}
-          <div className="w-full text-left">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">QR Code Preview</h3>
-            <p className="text-[10px] text-slate-400 leading-tight">Updates in real-time as you write</p>
-          </div>
-
-          {/* QR Area */}
-          <div className="relative border border-slate-200/50 dark:border-slate-800/50 rounded-2xl p-4 bg-white shadow-sm flex items-center justify-center w-full aspect-square max-w-[280px]">
-            {isComputingKey ? (
-              <div className="absolute inset-0 bg-white/80 dark:bg-slate-950/80 rounded-2xl flex flex-col items-center justify-center space-y-3 z-10 backdrop-blur-[1px]">
-                <RefreshCw className="h-8 w-8 text-indigo-500 animate-spin" />
-                <span className="text-xs font-medium text-slate-500">Deriving crypto keys...</span>
+      {/* Preview & Actions Panel with 3D Cyber Styling */}
+      <div className="lg:col-span-5">
+        <Card3DTilt>
+          <div className="glass-panel-3d rounded-3xl p-6 md:p-8 flex flex-col items-center justify-center text-center space-y-6 min-h-[420px]">
+            <div className="w-full text-left flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                  {carrier === 'qr' ? 'QR Code Preview' : 'Stego Image Preview'}
+                </h3>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {carrier === 'qr' ? 'Updates in real-time as you write' : 'Invisibly embeds message into image'}
+                </p>
               </div>
-            ) : null}
-
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="Encrypted QR Code" className="w-full h-full object-contain select-none" />
-            ) : (
-              <div className="text-slate-300 dark:text-slate-800 flex flex-col items-center justify-center space-y-3">
-                <QrCode className="h-16 w-16 stroke-[1.5]" />
-                <span className="text-xs text-slate-400 max-w-[180px]">
-                  Write a message and set a passphrase to generate your secure QR code.
+              {carrier === 'stego' && (
+                <span className="text-[10px] font-mono bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 px-2 py-0.5 rounded-full font-semibold">
+                  PNG Steganography
                 </span>
+              )}
+            </div>
+
+            <div className="relative border-2 border-indigo-500/20 dark:border-indigo-400/20 rounded-3xl p-4 bg-white dark:bg-slate-900 shadow-2xl flex items-center justify-center w-full aspect-square max-w-[280px] overflow-hidden transform transition-transform duration-300 hover:scale-[1.02]">
+              <CryptoAnimationOverlay type="encrypt" isActive={isComputingKey} statusText="Deriving Argon2 Keys & Encrypting..." />
+
+              {activeResultUrl ? (
+                <img src={activeResultUrl} alt="Encrypted Output" className="w-full h-full object-contain select-none rounded-2xl shadow-md animate-fade-in" />
+              ) : (
+                <div className="text-slate-300 dark:text-slate-700 flex flex-col items-center justify-center space-y-3">
+                  {carrier === 'qr' ? (
+                    <QrCode className="h-16 w-16 stroke-[1.5]" />
+                  ) : (
+                    <ImageIcon className="h-16 w-16 stroke-[1.5]" />
+                  )}
+                  <span className="text-xs text-slate-400 max-w-[180px]">
+                    {carrier === 'qr'
+                      ? 'Write a message and set a passphrase to generate your secure QR code.'
+                      : 'Write a message and select/upload a cover image to generate your Stego image.'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 w-full flex items-start space-x-2 text-left animate-shake">
+                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {activeResultUrl && !error && (
+              <div className="w-full grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => downloadResult('png')}
+                  className="py-3 px-4 btn-3d-primary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download PNG</span>
+                </button>
+                {carrier === 'qr' ? (
+                  <button
+                    onClick={() => downloadResult('svg')}
+                    className="py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Download SVG</span>
+                  </button>
+                ) : (
+                  <div className="text-[10px] text-slate-400 flex items-center justify-center px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <span>PNG Lossless Format</span>
+                  </div>
+                )}
+                <button
+                  onClick={copyResultToClipboard}
+                  className="col-span-2 py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  {copiedResult ? (
+                    <>
+                      <Check className="h-4 w-4 text-green-500" />
+                      <span className="text-green-600 dark:text-green-400">Copied Image to Clipboard!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      <span>Copy Image to Clipboard</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>
-
-          {/* Error display */}
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 w-full flex items-start space-x-2 text-left animate-shake">
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Download & Share Actions */}
-          {qrDataUrl && !error && (
-            <div className="w-full grid grid-cols-2 gap-3">
-              <button
-                onClick={() => downloadQR('png')}
-                className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md shadow-indigo-600/15 hover:shadow-indigo-600/25 transition-all duration-200 cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Download PNG</span>
-              </button>
-              <button
-                onClick={() => downloadQR('svg')}
-                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all duration-200 cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Download SVG</span>
-              </button>
-              <button
-                onClick={copyQRToClipboard}
-                className="col-span-2 py-2.5 px-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all duration-200 cursor-pointer"
-              >
-                {copiedQR ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-green-500" />
-                    <span className="text-green-600 dark:text-green-400">Copied Image to Clipboard!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>Copy QR Image to Clipboard</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
+        </Card3DTilt>
       </div>
     </div>
   );
