@@ -11,12 +11,12 @@ import {
 } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoKeyQRCrypt2026SecureApp',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'qrcrypt-stego-app.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'qrcrypt-stego-app',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'qrcrypt-stego-app.appspot.com',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '472954308268',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:472954308268:web:qrcryptstegoapp',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
