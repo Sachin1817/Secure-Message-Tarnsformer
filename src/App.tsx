@@ -5,11 +5,14 @@ import { EncryptScreen } from './components/EncryptScreen';
 import { DecryptScreen } from './components/DecryptScreen';
 import { AboutSection } from './components/AboutSection';
 import { CyberBackground3D } from './components/CyberBackground3D';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
 import { Lock, KeyRound, Sparkles } from 'lucide-react';
 
-function App() {
+function MainApp() {
   const [activeTab, setActiveTab] = useState<'encrypt' | 'decrypt' | 'about'>('encrypt');
   const { theme, toggleTheme } = useTheme();
+  const { isAuthModalOpen, closeAuthModal } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col relative transition-colors duration-500 bg-slate-100 dark:bg-slate-950 font-sans selection:bg-indigo-500 selection:text-white overflow-hidden">
@@ -47,6 +50,9 @@ function App() {
         {activeTab === 'about' && <AboutSection />}
       </main>
 
+      {/* Auth Modal Overlay */}
+      <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
+
       {/* Modern 3D Cyber Footer */}
       <footer className="w-full border-t border-slate-200/60 dark:border-slate-800/60 py-6 px-4 md:px-8 bg-white/40 dark:bg-slate-950/60 backdrop-blur-xl transition-colors duration-300 z-10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
@@ -73,6 +79,14 @@ function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   );
 }
 

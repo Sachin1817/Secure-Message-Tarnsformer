@@ -1,5 +1,6 @@
 import React from 'react';
-import { QrCode, ScanLine, Sun, Moon, HelpCircle, Shield } from 'lucide-react';
+import { QrCode, ScanLine, Sun, Moon, HelpCircle, Shield, LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
   activeTab: 'encrypt' | 'decrypt' | 'about';
@@ -14,6 +15,8 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   toggleTheme,
 }) => {
+  const { user, openAuthModal, logout } = useAuth();
+
   return (
     <header className="w-full glass-panel-3d sticky top-0 z-50 px-4 py-3.5 md:px-8 border-b transition-colors duration-300">
       <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -82,8 +85,39 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* 3D Theme Switcher */}
-        <div className="flex items-center space-x-2">
+        {/* User Auth Profile & Theme Switcher */}
+        <div className="flex items-center space-x-2.5">
+          {user ? (
+            <div className="flex items-center space-x-2 bg-slate-200/50 dark:bg-slate-900/80 p-1.5 pl-3 rounded-2xl border border-slate-300/40 dark:border-slate-800/80">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'User'} className="w-6 h-6 rounded-full ring-2 ring-indigo-500/40" />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-500 flex items-center justify-center font-bold text-xs">
+                  {user.email ? user.email[0].toUpperCase() : <UserIcon className="h-3.5 w-3.5" />}
+                </div>
+              )}
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-[100px] truncate hidden md:inline">
+                {user.displayName || user.email?.split('@')[0]}
+              </span>
+              <button
+                onClick={logout}
+                className="p-1.5 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors"
+                title="Log Out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={openAuthModal}
+              className="py-2 px-3.5 btn-3d-primary rounded-2xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-md"
+            >
+              <LogIn className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign In with Google</span>
+              <span className="sm:hidden">Login</span>
+            </button>
+          )}
+
           <button
             onClick={toggleTheme}
             className="p-2.5 rounded-2xl btn-3d-secondary flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-105"
