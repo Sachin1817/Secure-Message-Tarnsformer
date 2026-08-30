@@ -6,7 +6,11 @@ import {
   unpackPayload,
   hexToBytes,
   bytesToHex,
-  generatePreSharedKey
+  generatePreSharedKey,
+  packMediaData,
+  unpackMediaData,
+  encryptBinary,
+  decryptBinary
 } from './crypto';
 
 describe('Crypto Module', () => {
@@ -152,4 +156,43 @@ describe('Crypto Module', () => {
       expect(decrypted).toBe(testMessage);
     });
   });
+
+  describe('Media Encryption & Decryption (Images & Videos up to 50MB)', () => {
+    it('should pack and unpack media envelope correctly', () => {
+      const sampleImageData = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
+      const packed = packMediaData('image', sampleImageData, 'image/png', 'secret_photo.png');
+      const unpacked = unpackMediaData(packed);
+
+      expect(unpacked.type).toBe('image');
+      expect(unpacked.mimeType).toBe('image/png');
+      expect(unpacked.filename).toBe('secret_photo.png');
+      expect(unpacked.data).toEqual(sampleImageData);
+    });
+
+    it('should encrypt and decrypt a video file payload round-trip', async () => {
+      // Mock video byte buffer
+      const videoBytes = new Uint8Array(5000);
+      for (let i = 0; i < videoBytes.length; i++) {
+        videoBytes[i] = i % 256;
+      }
+
+      const mediaPayload = packMediaData('video', videoBytes, 'video/mp4', 'confidential_clip.mp4');
+      const encrypted = await encryptBinary(mediaPayload, testPassphrase, 'passphrase', 'pbkdf2');
+      const decrypted = await decryptBinary(encrypted, testPassphrase);
+
+      expect(decrypted.type).toBe('video');
+      expect(decrypted.mimeType).toBe('video/mp4');
+      expect(decrypted.filename).toBe('confidential_clip.mp4');
+      expect(decrypted.data).toEqual(videoBytes);
+    });
+
+    it('should maintain backward compatibility for plain text payloads', async () => {
+      const legacyPayload = await encryptMessage("Old format message", testPassphrase, 'passphrase', 'pbkdf2');
+      const decrypted = await decryptBinary(legacyPayload, testPassphrase);
+
+      expect(decrypted.type).toBe('text');
+      expect(decrypted.text).toBe("Old format message");
+    });
+  });
 });
+

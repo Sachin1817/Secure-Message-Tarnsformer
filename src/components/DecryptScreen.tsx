@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, Sparkles, Clock, RefreshCw, Flame } from 'lucide-react';
-import { decryptMessage, unpackPayload, bytesToBase64 } from '../crypto/crypto';
+import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, Sparkles, Clock, RefreshCw, Flame, Download } from 'lucide-react';
+import { decryptBinary, unpackPayload, bytesToBase64, type DecryptedResult } from '../crypto/crypto';
 import { decodeQRCodeFromImageData } from '../qr/qr';
 import { decodeStegoFromImageData } from '../stego/stego';
 import { Card3DTilt } from './Card3DTilt';
@@ -26,7 +26,8 @@ export const DecryptScreen: React.FC = () => {
   // Status states
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
-  const [decryptedText, setDecryptedText] = useState<string | null>(null);
+  const [decryptedResult, setDecryptedResult] = useState<DecryptedResult | null>(null);
+  const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
   
   // Clipboard copy status
   const [copiedText, setCopiedText] = useState(false);
@@ -55,6 +56,9 @@ export const DecryptScreen: React.FC = () => {
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
       }
+      if (mediaBlobUrl) {
+        URL.revokeObjectURL(mediaBlobUrl);
+      }
     };
   }, []);
 
@@ -79,7 +83,7 @@ export const DecryptScreen: React.FC = () => {
   const startCamera = async () => {
     setCameraPermissionError(null);
     setIsScanning(true);
-    setDecryptedText(null);
+    clearDecryptedResult();
     setRawPayload(null);
     setPayloadMetadata(null);
     setDecryptionError(null);
@@ -97,7 +101,7 @@ export const DecryptScreen: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Camera access failed:", err);
-      setCameraPermissionError("Camera access denied or unavailable. Please upload a QR code image below.");
+      setCameraPermissionError("Camera access denied or unavailable. Please upload an image file below.");
       setIsScanning(false);
     }
   };
@@ -143,7 +147,7 @@ export const DecryptScreen: React.FC = () => {
       // Reset decryption inputs
       setSecretInput('');
       setDecryptionError(null);
-      setDecryptedText(null);
+      clearDecryptedResult();
 
       // Check Burn-After-Reading Local Storage tracking
       if (isBurnAfterReading) {
@@ -160,7 +164,7 @@ export const DecryptScreen: React.FC = () => {
         setShowBurnWarning(false);
       }
     } catch (e) {
-      setDecryptionError("The scanned QR code is not a valid QRCrypt payload.");
+      setDecryptionError("The scanned code is not a valid QRCrypt payload.");
     }
   };
 
@@ -176,21 +180,16 @@ export const DecryptScreen: React.FC = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
-      // Draw video to hidden canvas
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       
-      // Decode QR code or Stego payload
       let decodedPayload = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
       if (!decodedPayload) {
         decodedPayload = decodeStegoFromImageData(imgData.data);
       }
       
       if (decodedPayload) {
-        // Success! Stop camera and load payload
         stopCamera();
-        
-        // Convert to base64 for tracking
         const b64Str = bytesToBase64(decodedPayload);
         processDecodedPayload(decodedPayload, b64Str);
         return;
@@ -220,7 +219,6 @@ export const DecryptScreen: React.FC = () => {
           ctx.drawImage(img, 0, 0);
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           
-          // Try QR code decoding first, then fall back to Stego decoding
           let decoded = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
           if (!decoded) {
             decoded = decodeStegoFromImageData(imgData.data);
@@ -268,8 +266,18 @@ export const DecryptScreen: React.FC = () => {
     setDecryptionError(null);
 
     try {
-      const plaintext = await decryptMessage(rawPayload, secretInput);
-      setDecryptedText(plaintext);
+      const result = await decryptBinary(rawPayload, secretInput);
+      setDecryptedResult(result);
+
+      // Create blob URL for media files
+      if (result.type === 'image' || result.type === 'video' || result.type === 'file') {
+        if (mediaBlobUrl) {
+          URL.revokeObjectURL(mediaBlobUrl);
+        }
+        const blob = new Blob([result.data as any], { type: result.mimeType });
+        const url = URL.createObjectURL(blob);
+        setMediaBlobUrl(url);
+      }
       
       // Start secure auto-clear countdown
       setTimeLeft(clearTimer);
@@ -281,7 +289,6 @@ export const DecryptScreen: React.FC = () => {
         const scansList = savedScans ? JSON.parse(savedScans) : [];
         if (!scansList.includes(payloadHash)) {
           scansList.push(payloadHash);
-          // Keep a max of 500 scans recorded to prevent local storage bloat
           if (scansList.length > 500) {
             scansList.shift();
           }
@@ -290,24 +297,36 @@ export const DecryptScreen: React.FC = () => {
       }
     } catch (err: any) {
       setDecryptionError("Decryption failed. Invalid passphrase/key or tampered payload.");
-      setDecryptedText(null);
+      clearDecryptedResult();
     } finally {
       setIsDecrypting(false);
     }
   };
 
   const copyToClipboard = () => {
-    if (!decryptedText) return;
-    navigator.clipboard.writeText(decryptedText);
+    if (!decryptedResult?.text) return;
+    navigator.clipboard.writeText(decryptedResult.text);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
   };
 
+  const downloadDecryptedMedia = () => {
+    if (!decryptedResult || !mediaBlobUrl) return;
+    const link = document.createElement('a');
+    link.href = mediaBlobUrl;
+    const ext = decryptedResult.mimeType.split('/')[1]?.split(';')[0] || (decryptedResult.type === 'video' ? 'mp4' : 'png');
+    link.download = decryptedResult.filename || `decrypted-${decryptedResult.type}-${Date.now()}.${ext}`;
+    link.click();
+  };
+
   const clearDecryptedResult = () => {
-    setDecryptedText(null);
+    setDecryptedResult(null);
+    if (mediaBlobUrl) {
+      URL.revokeObjectURL(mediaBlobUrl);
+      setMediaBlobUrl(null);
+    }
     setTimeLeft(null);
     setSecretInput('');
-    // Wipe sensitive references if desired
   };
 
   const resetScanner = () => {
@@ -315,7 +334,7 @@ export const DecryptScreen: React.FC = () => {
     setRawPayload(null);
     setPayloadMetadata(null);
     setPayloadBase64(null);
-    setDecryptedText(null);
+    clearDecryptedResult();
     setDecryptionError(null);
     setTimeLeft(null);
     setShowBurnWarning(false);
@@ -328,7 +347,7 @@ export const DecryptScreen: React.FC = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
               <Scan className="h-5 w-5 text-indigo-500" />
-              <span>Decrypt & Scan</span>
+              <span>Decrypt & Extract</span>
             </h2>
             {rawPayload && (
               <button
@@ -348,7 +367,6 @@ export const DecryptScreen: React.FC = () => {
               {isScanning ? (
                 <div className="relative rounded-3xl overflow-hidden border-2 border-indigo-500/30 aspect-video bg-black max-w-[500px] mx-auto shadow-2xl">
                   <video ref={videoRef} className="w-full h-full object-cover" />
-                  {/* Target overlay indicator */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-[180px] h-[180px] md:w-[220px] md:h-[220px] border-2 border-indigo-500 rounded-3xl relative animate-pulse flex items-center justify-center shadow-lg shadow-indigo-500/40">
                       <div className="absolute inset-0 border border-white/20 rounded-3xl" />
@@ -357,7 +375,6 @@ export const DecryptScreen: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  {/* Stop Action */}
                   <button
                     onClick={stopCamera}
                     className="absolute bottom-4 left-1/2 -translate-x-1/2 py-2 px-5 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-bold shadow-lg transition-all transform hover:scale-105"
@@ -407,7 +424,7 @@ export const DecryptScreen: React.FC = () => {
                   Drag and drop your QR Code or Stego Image
                 </p>
                 <p className="text-xs text-slate-400 mb-5 max-w-[320px]">
-                  Supports PNG, JPG, or SVG files. Stego payloads are automatically detected!
+                  Supports PNG, JPG, or SVG files with hidden messages, photos, or videos up to 50MB.
                 </p>
                 <label className="py-2.5 px-5 btn-3d-secondary rounded-2xl text-xs font-bold cursor-pointer inline-flex items-center space-x-2">
                   <span>Browse Files</span>
@@ -423,7 +440,7 @@ export const DecryptScreen: React.FC = () => {
           )}
 
           {/* Phase 2: Decrypted Payload Configuration Input */}
-          {rawPayload && payloadMetadata && !decryptedText && (
+          {rawPayload && payloadMetadata && !decryptedResult && (
             <div className="space-y-6 animate-slide-down max-w-[500px] mx-auto relative p-1 overflow-hidden">
               <CryptoAnimationOverlay type="decrypt" isActive={isDecrypting} statusText="Verifying AES-GCM Tag & Decrypting..." />
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm">
@@ -507,13 +524,19 @@ export const DecryptScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Phase 3: Success state - Decrypted text output */}
-          {decryptedText && (
-            <div className="space-y-6 animate-slide-down border-t border-slate-200/50 dark:border-slate-800/50 pt-6 max-w-[500px] mx-auto">
+          {/* Phase 3: Success state - Render Decrypted Text, Image, or Video Output */}
+          {decryptedResult && (
+            <div className="space-y-6 animate-slide-down border-t border-slate-200/50 dark:border-slate-800/50 pt-6 max-w-[560px] mx-auto">
               <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 flex items-center justify-between shadow-sm">
                 <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
                   <Sparkles className="h-5 w-5" />
-                  <span className="text-sm font-bold">Decrypted Plaintext Message</span>
+                  <span className="text-sm font-bold">
+                    {decryptedResult.type === 'image'
+                      ? 'Decrypted Image'
+                      : decryptedResult.type === 'video'
+                      ? 'Decrypted Video'
+                      : 'Decrypted Message'}
+                  </span>
                 </div>
                 
                 {timeLeft !== null && (
@@ -524,14 +547,48 @@ export const DecryptScreen: React.FC = () => {
                 )}
               </div>
 
-              <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-5 bg-white/70 dark:bg-slate-950/60 shadow-xl min-h-[140px] max-h-[300px] overflow-y-auto font-sans text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap select-text break-words">
-                {decryptedText}
-              </div>
+              {/* Text Message Result */}
+              {decryptedResult.type === 'text' && (
+                <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-5 bg-white/70 dark:bg-slate-950/60 shadow-xl min-h-[140px] max-h-[300px] overflow-y-auto font-sans text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap select-text break-words">
+                  {decryptedResult.text}
+                </div>
+              )}
 
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Image Result */}
+              {decryptedResult.type === 'image' && mediaBlobUrl && (
+                <div className="space-y-3">
+                  <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-3 bg-black/5 dark:bg-black/30 shadow-xl flex items-center justify-center overflow-hidden max-h-[360px]">
+                    <img src={mediaBlobUrl} alt="Decrypted file" className="max-h-[340px] w-auto object-contain rounded-2xl" />
+                  </div>
+                  {decryptedResult.filename && (
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono px-2">
+                      <span className="truncate">{decryptedResult.filename}</span>
+                      <span>{(decryptedResult.data.length / 1024).toFixed(1)} KB</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Video Result */}
+              {decryptedResult.type === 'video' && mediaBlobUrl && (
+                <div className="space-y-3">
+                  <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-3 bg-black shadow-xl overflow-hidden">
+                    <video src={mediaBlobUrl} controls autoPlay className="w-full max-h-[340px] rounded-2xl" />
+                  </div>
+                  {decryptedResult.filename && (
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono px-2">
+                      <span className="truncate">{decryptedResult.filename}</span>
+                      <span>{(decryptedResult.data.length / (1024 * 1024)).toFixed(2)} MB</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Control Actions (Timer + Download/Copy + Wipe) */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center space-x-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Auto-clear timer:
+                    Auto-clear:
                   </span>
                   <select
                     value={clearTimer}
@@ -553,27 +610,38 @@ export const DecryptScreen: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={clearDecryptedResult}
-                    className="py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors border border-red-500/20"
+                    className="py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors border border-red-500/20 cursor-pointer"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     <span>Wipe Now</span>
                   </button>
-                  <button
-                    onClick={copyToClipboard}
-                    className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5"
-                  >
-                    {copiedText ? (
-                      <>
-                        <Check className="h-4 w-4 text-green-300" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        <span>Copy Message</span>
-                      </>
-                    )}
-                  </button>
+
+                  {decryptedResult.type === 'text' ? (
+                    <button
+                      onClick={copyToClipboard}
+                      className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      {copiedText ? (
+                        <>
+                          <Check className="h-4 w-4 text-green-300" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          <span>Copy Message</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={downloadDecryptedMedia}
+                      className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Download {decryptedResult.type === 'video' ? 'Video' : 'Image'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

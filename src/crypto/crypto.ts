@@ -85,10 +85,6 @@ export async function deriveKeyFromPassphrase(
   }
 
   // Fallback to PBKDF2
-  // Trade-off: PBKDF2 is slower to compute on some devices compared to WASM Argon2,
-  // but it is natively supported by the Web Crypto API, works completely offline, 
-  // requires zero external JS files/WASM to load, and is secure against custom hardware 
-  // cracking when iterations are sufficiently high (>= 600,000).
   const encoder = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
     "raw",
@@ -211,31 +207,148 @@ export function unpackPayload(payload: Uint8Array): {
 }
 
 /**
- * Encrypts a plaintext string to a binary payload.
+ * Media Envelope magic header: "QCM1" (0x51, 0x43, 0x4D, 0x31)
  */
-export async function encryptMessage(
-  plaintext: string,
+export const MEDIA_MAGIC = new Uint8Array([0x51, 0x43, 0x4D, 0x31]);
+
+export interface DecryptedResult {
+  type: 'text' | 'image' | 'video' | 'file';
+  mimeType: string;
+  filename: string;
+  data: Uint8Array;
+  text?: string;
+}
+
+/**
+ * Packs media content (text, image, video) into a structured envelope before encryption.
+ */
+export function packMediaData(
+  type: 'text' | 'image' | 'video' | 'file',
+  rawData: Uint8Array,
+  mimeType = '',
+  filename = ''
+): Uint8Array {
+  const encoder = new TextEncoder();
+  const mimeBytes = encoder.encode(mimeType);
+  const fileBytes = encoder.encode(filename);
+
+  let typeByte = 0x01;
+  if (type === 'image') typeByte = 0x02;
+  else if (type === 'video') typeByte = 0x03;
+  else if (type === 'file') typeByte = 0x04;
+
+  const totalLen = 4 + 1 + 2 + mimeBytes.length + 2 + fileBytes.length + rawData.length;
+  const buffer = new Uint8Array(totalLen);
+
+  let offset = 0;
+  buffer.set(MEDIA_MAGIC, offset);
+  offset += 4;
+
+  buffer[offset] = typeByte;
+  offset += 1;
+
+  const view = new DataView(buffer.buffer);
+  view.setUint16(offset, mimeBytes.length, false);
+  offset += 2;
+
+  buffer.set(mimeBytes, offset);
+  offset += mimeBytes.length;
+
+  view.setUint16(offset, fileBytes.length, false);
+  offset += 2;
+
+  buffer.set(fileBytes, offset);
+  offset += fileBytes.length;
+
+  buffer.set(rawData, offset);
+
+  return buffer;
+}
+
+/**
+ * Unpacks decrypted bytes, determining whether it's structured media envelope or plain UTF-8 text.
+ */
+export function unpackMediaData(decryptedBytes: Uint8Array): DecryptedResult {
+  // Check for MEDIA_MAGIC
+  if (
+    decryptedBytes.length >= 9 &&
+    decryptedBytes[0] === MEDIA_MAGIC[0] &&
+    decryptedBytes[1] === MEDIA_MAGIC[1] &&
+    decryptedBytes[2] === MEDIA_MAGIC[2] &&
+    decryptedBytes[3] === MEDIA_MAGIC[3]
+  ) {
+    try {
+      let offset = 4;
+      const typeByte = decryptedBytes[offset];
+      offset += 1;
+
+      let type: 'text' | 'image' | 'video' | 'file' = 'text';
+      if (typeByte === 0x02) type = 'image';
+      else if (typeByte === 0x03) type = 'video';
+      else if (typeByte === 0x04) type = 'file';
+
+      const view = new DataView(decryptedBytes.buffer, decryptedBytes.byteOffset, decryptedBytes.byteLength);
+      const mimeLen = view.getUint16(offset, false);
+      offset += 2;
+
+      const decoder = new TextDecoder();
+      const mimeType = decoder.decode(decryptedBytes.slice(offset, offset + mimeLen));
+      offset += mimeLen;
+
+      const fileLen = view.getUint16(offset, false);
+      offset += 2;
+
+      const filename = decoder.decode(decryptedBytes.slice(offset, offset + fileLen));
+      offset += fileLen;
+
+      const data = decryptedBytes.slice(offset);
+
+      let text: string | undefined;
+      if (type === 'text') {
+        text = decoder.decode(data);
+      }
+
+      return {
+        type,
+        mimeType: mimeType || (type === 'text' ? 'text/plain' : type === 'image' ? 'image/png' : 'video/mp4'),
+        filename,
+        data,
+        text
+      };
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  // Backward compatibility: raw plain text
+  const decoder = new TextDecoder();
+  const text = decoder.decode(decryptedBytes);
+  return {
+    type: 'text',
+    mimeType: 'text/plain',
+    filename: '',
+    data: decryptedBytes,
+    text
+  };
+}
+
+/**
+ * Encrypts raw binary data (can be media or packed media) to a binary payload.
+ */
+export async function encryptBinary(
+  dataBytes: Uint8Array,
   secret: string,
   mode: 'passphrase' | 'preshared',
   preferredKdf: 'argon2id' | 'pbkdf2' = 'argon2id',
   burnAfterReading = false
 ): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const plaintextBytes = encoder.encode(plaintext);
-
-  // Generate a fresh random 12-byte nonce
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-
   let payload: Uint8Array;
 
   if (mode === 'passphrase') {
-    // Generate fresh random 16-byte salt
     const salt = crypto.getRandomValues(new Uint8Array(16));
-    
-    // Derive key
     const { key } = await deriveKeyFromPassphrase(secret, salt, preferredKdf);
     
-    // Encrypt (Web Crypto automatically appends the 16-byte auth tag at the end of the ciphertext)
     const encryptedDataBuffer = await crypto.subtle.encrypt(
       {
         name: "AES-GCM",
@@ -243,14 +356,13 @@ export async function encryptMessage(
         tagLength: 128
       },
       key,
-      plaintextBytes
+      dataBytes as any
     );
 
     const encryptedData = new Uint8Array(encryptedDataBuffer);
     const modeFlag = burnAfterReading ? (0x01 | 0x10) : 0x01;
     payload = packPayload(1, modeFlag, salt, nonce, encryptedData);
   } else {
-    // Pre-shared key mode
     const keyBytes = hexToBytes(secret);
     if (keyBytes.length !== 32) {
       throw new Error("Pre-shared key must be 32 bytes (64 hex characters)");
@@ -264,7 +376,6 @@ export async function encryptMessage(
       ["encrypt"]
     );
 
-    // Encrypt
     const encryptedDataBuffer = await crypto.subtle.encrypt(
       {
         name: "AES-GCM",
@@ -272,7 +383,7 @@ export async function encryptMessage(
         tagLength: 128
       },
       key,
-      plaintextBytes as any
+      dataBytes as any
     );
 
     const encryptedData = new Uint8Array(encryptedDataBuffer);
@@ -284,13 +395,12 @@ export async function encryptMessage(
 }
 
 /**
- * Decrypts a binary payload to a plaintext string.
- * Fails with a generic error on verification failure to prevent oracle attacks.
+ * Decrypts a binary payload to raw decrypted bytes.
  */
-export async function decryptMessage(
+export async function decryptBinaryRaw(
   payload: Uint8Array,
   secret: string
-): Promise<string> {
+): Promise<Uint8Array> {
   try {
     const { version, mode, salt, nonce, encryptedData } = unpackPayload(payload);
 
@@ -302,15 +412,12 @@ export async function decryptMessage(
     const actualMode = mode & 0x0F;
 
     if (actualMode === 0x01) {
-      // Passphrase mode
       if (!salt) {
         throw new Error("Salt missing in passphrase mode payload");
       }
-      
       const derivationResult = await deriveKeyFromPassphrase(secret, salt, 'argon2id');
       key = derivationResult.key;
     } else if (actualMode === 0x02) {
-      // Pre-shared key mode
       const keyBytes = hexToBytes(secret);
       if (keyBytes.length !== 32) {
         throw new Error("Pre-shared key must be 32 bytes");
@@ -327,7 +434,6 @@ export async function decryptMessage(
       throw new Error("Unknown mode flag");
     }
 
-    // Decrypt
     const decryptedBuffer = await crypto.subtle.decrypt(
       {
         name: "AES-GCM",
@@ -338,12 +444,48 @@ export async function decryptMessage(
       encryptedData as any
     );
 
-    const decoder = new TextDecoder();
-    return decoder.decode(decryptedBuffer);
+    return new Uint8Array(decryptedBuffer);
   } catch (err) {
-    // Generic error as requested
     throw new Error("Decryption failed. Please check the passphrase/key or the QR code payload.");
   }
+}
+
+/**
+ * Decrypts binary payload and parses into structured DecryptedResult (text, image, or video).
+ */
+export async function decryptBinary(
+  payload: Uint8Array,
+  secret: string
+): Promise<DecryptedResult> {
+  const rawDecrypted = await decryptBinaryRaw(payload, secret);
+  return unpackMediaData(rawDecrypted);
+}
+
+/**
+ * Encrypts a plaintext string to a binary payload.
+ */
+export async function encryptMessage(
+  plaintext: string,
+  secret: string,
+  mode: 'passphrase' | 'preshared',
+  preferredKdf: 'argon2id' | 'pbkdf2' = 'argon2id',
+  burnAfterReading = false
+): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const plaintextBytes = encoder.encode(plaintext);
+  return encryptBinary(plaintextBytes, secret, mode, preferredKdf, burnAfterReading);
+}
+
+/**
+ * Decrypts a binary payload to a plaintext string.
+ */
+export async function decryptMessage(
+  payload: Uint8Array,
+  secret: string
+): Promise<string> {
+  const rawBytes = await decryptBinaryRaw(payload, secret);
+  const result = unpackMediaData(rawBytes);
+  return result.text !== undefined ? result.text : new TextDecoder().decode(result.data);
 }
 
 /**

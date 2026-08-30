@@ -1,13 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Sparkles } from 'lucide-react';
-import { encryptMessage, generatePreSharedKey, deriveKeyFromPassphrase, packPayload } from '../crypto/crypto';
+import { Shield, Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Sparkles, Video, FileText, UploadCloud, Info } from 'lucide-react';
+import { encryptBinary, packMediaData, generatePreSharedKey, deriveKeyFromPassphrase, packPayload } from '../crypto/crypto';
 import { generateQRCode } from '../qr/qr';
 import { encodeStegoImage, generateRandomCoverImage } from '../stego/stego';
 import { Card3DTilt } from './Card3DTilt';
 import { CryptoAnimationOverlay } from './CryptoAnimationOverlay';
 
+// Max limits
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_QR_SAFE_SIZE = 1800; // ~1.8 KB for QR code data capacity
+
 export const EncryptScreen: React.FC = () => {
+  // Input Target: Text, Image File, or Video File
+  const [contentType, setContentType] = useState<'text' | 'image' | 'video'>('text');
+
+  // Text message state
   const [message, setMessage] = useState('');
+
+  // Media file state (image or video)
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaBytes, setMediaBytes] = useState<Uint8Array | null>(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
+
+  // Security mode: passphrase vs preshared
   const [mode, setMode] = useState<'passphrase' | 'preshared'>('passphrase');
   
   // Carrier State: QR Code vs Steganography Image
@@ -71,7 +87,60 @@ export const EncryptScreen: React.FC = () => {
     }
   }, []);
 
-  // Debounced/Triggered Generation
+  // When changing contentType to video, force carrier to stego (video exceeds QR capacity)
+  useEffect(() => {
+    if (contentType === 'video') {
+      setCarrier('stego');
+    }
+  }, [contentType]);
+
+  // Handle Media File Selection
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const maxSize = contentType === 'video' ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+    if (file.size > maxSize) {
+      setError(`File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum limit of 50 MB.`);
+      return;
+    }
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      setMediaFile(file);
+      setMediaBytes(bytes);
+      
+      // Revoke previous preview URL
+      if (mediaPreviewUrl) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
+      const preview = URL.createObjectURL(file);
+      setMediaPreviewUrl(preview);
+      setError(null);
+
+      // If file is larger than QR limit, automatically switch carrier to stego
+      if (file.size > MAX_QR_SAFE_SIZE) {
+        setCarrier('stego');
+      }
+    } catch (err: any) {
+      setError("Failed to read file: " + (err?.message || String(err)));
+    }
+  };
+
+  const removeSelectedFile = () => {
+    setMediaFile(null);
+    setMediaBytes(null);
+    if (mediaPreviewUrl) {
+      URL.revokeObjectURL(mediaPreviewUrl);
+      setMediaPreviewUrl(null);
+    }
+    setQrDataUrl(null);
+    setQrSvgContent(null);
+    setStegoDataUrl(null);
+  };
+
+  // Debounced / Triggered Generation
   useEffect(() => {
     let active = true;
     const generateTimer = setTimeout(() => {
@@ -84,10 +153,26 @@ export const EncryptScreen: React.FC = () => {
       active = false;
       clearTimeout(generateTimer);
     };
-  }, [message, mode, carrier, stegoSource, customCoverSrc, randomCoverSrc, passphrase, kdfMethod, burnAfterReading, errorCorrection, presharedKey]);
+  }, [
+    contentType,
+    message,
+    mediaBytes,
+    mode,
+    carrier,
+    stegoSource,
+    customCoverSrc,
+    randomCoverSrc,
+    passphrase,
+    kdfMethod,
+    burnAfterReading,
+    errorCorrection,
+    presharedKey
+  ]);
 
   const triggerGeneration = async () => {
-    if (!message) {
+    // Check if there is data to encrypt
+    const hasData = contentType === 'text' ? !!message : !!mediaBytes;
+    if (!hasData) {
       setQrDataUrl(null);
       setQrSvgContent(null);
       setStegoDataUrl(null);
@@ -112,7 +197,7 @@ export const EncryptScreen: React.FC = () => {
     }
 
     if (carrier === 'stego' && stegoSource === 'custom' && !customCoverSrc) {
-      setError("Please upload a cover image to hide your message inside.");
+      setError("Please upload a cover image to hide your encrypted file inside.");
       setStegoDataUrl(null);
       return;
     }
@@ -121,6 +206,26 @@ export const EncryptScreen: React.FC = () => {
     setError(null);
 
     try {
+      let unencryptedPayload: Uint8Array;
+
+      if (contentType === 'text') {
+        const encoder = new TextEncoder();
+        const textBytes = encoder.encode(message);
+        unencryptedPayload = packMediaData('text', textBytes, 'text/plain', '');
+      } else if (contentType === 'image' && mediaBytes && mediaFile) {
+        unencryptedPayload = packMediaData('image', mediaBytes, mediaFile.type || 'image/png', mediaFile.name);
+      } else if (contentType === 'video' && mediaBytes && mediaFile) {
+        unencryptedPayload = packMediaData('video', mediaBytes, mediaFile.type || 'video/mp4', mediaFile.name);
+      } else {
+        throw new Error("Missing content to encrypt.");
+      }
+
+      // Check if trying to put large data into QR code
+      if (carrier === 'qr' && unencryptedPayload.length > MAX_QR_SAFE_SIZE) {
+        setCarrier('stego');
+        setError("Content exceeds QR code physical capacity (1.8 KB). Automatically switched to Stego Image Carrier (supports up to 50 MB).");
+      }
+
       let payloadBytes: Uint8Array;
 
       if (mode === 'passphrase') {
@@ -142,14 +247,11 @@ export const EncryptScreen: React.FC = () => {
           };
         }
 
-        const encoder = new TextEncoder();
-        const plaintextBytes = encoder.encode(message);
         const nonce = crypto.getRandomValues(new Uint8Array(12));
-        
         const encryptedBuffer = await crypto.subtle.encrypt(
           { name: "AES-GCM", iv: nonce, tagLength: 128 },
           keyToUse,
-          plaintextBytes
+          unencryptedPayload as any
         );
 
         const saltBytes = new Uint8Array(
@@ -160,7 +262,7 @@ export const EncryptScreen: React.FC = () => {
         
         payloadBytes = packPayload(1, modeFlag, saltBytes, nonce, encryptedData);
       } else {
-        payloadBytes = await encryptMessage(message, presharedKey, 'preshared', kdfMethod, burnAfterReading);
+        payloadBytes = await encryptBinary(unencryptedPayload, presharedKey, 'preshared', kdfMethod, burnAfterReading);
       }
 
       if (carrier === 'qr') {
@@ -179,7 +281,7 @@ export const EncryptScreen: React.FC = () => {
       setError(null);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message || "Failed to generate payload.");
+      setError(err?.message || "Failed to generate encrypted payload.");
       setQrDataUrl(null);
       setQrSvgContent(null);
       setStegoDataUrl(null);
@@ -265,31 +367,193 @@ export const EncryptScreen: React.FC = () => {
   };
 
   const strengthInfo = getPassphraseStrength(passphrase);
-  const remainingBytes = Math.max(0, 1500 - message.length);
   const activeResultUrl = carrier === 'qr' ? qrDataUrl : stegoDataUrl;
+  const isLargeMedia = (contentType === 'image' && (mediaFile?.size || 0) > MAX_QR_SAFE_SIZE) || contentType === 'video';
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in p-2 max-w-6xl mx-auto">
       {/* Configuration controls */}
-      <div className="lg:col-span-7">
+      <div className="lg:col-span-7 space-y-6">
         <Card3DTilt>
           <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-6">
-            <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
-              <Shield className="h-5 w-5 text-indigo-500" />
-              <span>Encrypt Message</span>
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
+                <Shield className="h-5 w-5 text-indigo-500" />
+                <span>Encrypt & Conceal</span>
+              </h2>
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                Max 50 MB
+              </span>
+            </div>
+
+            {/* Input Content Type Selector: Text vs Image vs Video */}
+            <div>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
+                Select Content to Encrypt
+              </label>
+              <div className="grid grid-cols-3 gap-2 bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl border border-slate-300/40 dark:border-slate-800/80 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentType('text');
+                    removeSelectedFile();
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    contentType === 'text'
+                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Text Message</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentType('image');
+                    setMessage('');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    contentType === 'image'
+                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                  <span>Image File</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentType('video');
+                    setMessage('');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    contentType === 'video'
+                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <Video className="h-4 w-4" />
+                  <span>Video File</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Plaintext Input (if text selected) */}
+            {contentType === 'text' && (
+              <div className="space-y-1 animate-fade-in">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Plaintext Message
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {message.length} chars
+                  </span>
+                </div>
+                <textarea
+                  value={message}
+                  onChange={(e) => {
+                    setMessage(e.target.value);
+                    if (!e.target.value) cachedKeyRef.current = null;
+                  }}
+                  placeholder="Type your confidential message here..."
+                  rows={4}
+                  className="w-full glass-input-3d rounded-2xl p-4 text-sm font-sans resize-none"
+                />
+              </div>
+            )}
+
+            {/* Media Upload Area (if image or video selected) */}
+            {(contentType === 'image' || contentType === 'video') && (
+              <div className="space-y-3 animate-fade-in">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Upload {contentType === 'image' ? 'Image' : 'Video'} to Encrypt (Up to 50 MB)
+                </label>
+
+                {!mediaFile ? (
+                  <label className="border-2 border-dashed border-indigo-500/30 hover:border-indigo-500 dark:border-indigo-400/30 dark:hover:border-indigo-400 rounded-3xl p-6 flex flex-col items-center justify-center space-y-3 cursor-pointer bg-slate-50/50 dark:bg-slate-900/40 hover:bg-indigo-500/5 transition-all">
+                    <div className="p-3.5 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      <UploadCloud className="h-8 w-8" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Click or drag & drop {contentType === 'image' ? 'photo' : 'video'} here
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {contentType === 'image' ? 'PNG, JPG, WebP, GIF' : 'MP4, WebM, MOV'} (Max 50MB)
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      accept={contentType === 'image' ? 'image/*' : 'video/*'}
+                      onChange={handleMediaUpload}
+                      className="hidden"
+                    />
+                  </label>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3 overflow-hidden">
+                        <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500 flex-shrink-0">
+                          {contentType === 'image' ? <ImageIcon className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                            {mediaFile.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            {(mediaFile.size / (1024 * 1024)).toFixed(2)} MB • {mediaFile.type || 'Binary'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={removeSelectedFile}
+                        className="text-xs text-red-500 hover:text-red-600 font-semibold px-2 py-1 rounded-lg hover:bg-red-500/10 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    {/* Preview Thumbnail / Video */}
+                    {mediaPreviewUrl && (
+                      <div className="max-h-48 rounded-xl overflow-hidden bg-black/5 flex items-center justify-center">
+                        {contentType === 'image' ? (
+                          <img src={mediaPreviewUrl} alt="Preview" className="max-h-48 object-contain rounded-xl" />
+                        ) : (
+                          <video src={mediaPreviewUrl} controls className="max-h-48 rounded-xl w-full" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Carrier Selector (QR vs Stego) */}
             <div>
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                Output Format (Carrier)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Output Format (Carrier)
+                </label>
+                {isLargeMedia && (
+                  <span className="text-[10px] text-amber-500 dark:text-amber-400 flex items-center space-x-1 font-mono">
+                    <Info className="h-3 w-3" />
+                    <span>Large files require Stego PNG</span>
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3 bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl border border-slate-300/40 dark:border-slate-800/80 shadow-inner">
                 <button
                   type="button"
+                  disabled={isLargeMedia}
                   onClick={() => setCarrier('qr')}
                   className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 transition-all duration-200 ${
-                    carrier === 'qr'
+                    isLargeMedia
+                      ? 'opacity-40 cursor-not-allowed text-slate-400'
+                      : carrier === 'qr'
                       ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
@@ -307,7 +571,7 @@ export const EncryptScreen: React.FC = () => {
                   }`}
                 >
                   <ImageIcon className="h-4 w-4" />
-                  <span>Stego Image (Hidden)</span>
+                  <span>Stego Image (Up to 50MB)</span>
                 </button>
               </div>
             </div>
@@ -364,7 +628,7 @@ export const EncryptScreen: React.FC = () => {
                     <img src={customCoverSrc} alt="Custom cover preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-800" />
                     <div className="text-[11px] text-slate-500">
                       <span className="font-semibold text-slate-700 dark:text-slate-300 block">Custom Cover Loaded</span>
-                      <span>Your message will be invisibly embedded in this image.</span>
+                      <span>Your encrypted file will be invisibly embedded in this image.</span>
                     </div>
                   </div>
                 )}
@@ -400,28 +664,6 @@ export const EncryptScreen: React.FC = () => {
                   Pre-Shared Key
                 </button>
               </div>
-            </div>
-
-            {/* Plaintext Input */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Plaintext Message
-                </label>
-                <span className={`text-[10px] font-mono ${remainingBytes < 100 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                  {remainingBytes} bytes remaining
-                </span>
-              </div>
-              <textarea
-                value={message}
-                onChange={(e) => {
-                  setMessage(e.target.value);
-                  if (!e.target.value) cachedKeyRef.current = null;
-                }}
-                placeholder="Type your sensitive message here..."
-                rows={4}
-                className="w-full glass-input-3d rounded-2xl p-4 text-sm font-sans resize-none"
-              />
             </div>
 
             {/* Passphrase Mode Panel */}
@@ -595,7 +837,7 @@ export const EncryptScreen: React.FC = () => {
                   {carrier === 'qr' ? 'QR Code Preview' : 'Stego Image Preview'}
                 </h3>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  {carrier === 'qr' ? 'Updates in real-time as you write' : 'Invisibly embeds message into image'}
+                  {carrier === 'qr' ? 'Updates in real-time' : 'Conceals encrypted data into image'}
                 </p>
               </div>
               {carrier === 'stego' && (
@@ -619,8 +861,8 @@ export const EncryptScreen: React.FC = () => {
                   )}
                   <span className="text-xs text-slate-400 max-w-[180px]">
                     {carrier === 'qr'
-                      ? 'Write a message and set a passphrase to generate your secure QR code.'
-                      : 'Write a message and select/upload a cover image to generate your Stego image.'}
+                      ? 'Enter message or choose file to generate your secure QR code.'
+                      : 'Enter message or upload video/image to generate your Stego image.'}
                   </span>
                 </div>
               )}
@@ -652,7 +894,7 @@ export const EncryptScreen: React.FC = () => {
                   </button>
                 ) : (
                   <div className="text-[10px] text-slate-400 flex items-center justify-center px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <span>PNG Lossless Format</span>
+                    <span>Lossless PNG Format</span>
                   </div>
                 )}
                 <button
