@@ -266,9 +266,7 @@ export const DecryptScreen: React.FC = () => {
         setMediaBlobUrl(url);
       }
 
-      if (clearTimer > 0) {
-        setTimeLeft(clearTimer);
-      }
+      setTimeLeft(60);
     } catch (err: any) {
       setDecryptionError(err.message || "Decryption failed. Please check the secret or passphrase.");
     } finally {
