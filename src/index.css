@@ -4,38 +4,65 @@
 
 @layer base {
   body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     @apply bg-slate-100 text-slate-900 transition-colors duration-500 antialiased overflow-x-hidden min-h-screen;
   }
   body.dark {
-    @apply bg-slate-950 text-slate-100;
+    @apply bg-[#131314] text-[#e5e2e3];
   }
+}
+
+/* Material Symbols & Icon utilities */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.icon-fill {
+  font-variation-settings: 'FILL' 1;
+}
+
+/* Stitch Cyber Glow System */
+.glow-effect {
+  box-shadow: 0 0 20px rgba(0, 230, 57, 0.2), inset 0 0 10px rgba(0, 230, 57, 0.05);
+}
+
+.glow-border:focus-within {
+  box-shadow: 0 0 14px rgba(0, 230, 57, 0.35), inset 0 0 6px rgba(0, 230, 57, 0.15);
+  border-color: #00e639;
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 218, 243, 0.25);
+}
+
+/* Subtle Matrix Scanline Overlay */
+.scanline {
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.12));
+  background-size: 100% 4px;
+  pointer-events: none;
 }
 
 /* 3D Glassmorphism & Cyber Depth System */
 .glass-panel-3d {
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 
-    0 20px 50px -12px rgba(99, 102, 241, 0.12),
+    0 20px 50px -12px rgba(0, 230, 57, 0.08),
     0 10px 20px -5px rgba(0, 0, 0, 0.04),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.03);
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .glass-panel-3d {
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(20, 20, 22, 0.78);
   backdrop-filter: blur(20px) saturate(190%);
   -webkit-backdrop-filter: blur(20px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(59, 75, 55, 0.45);
   box-shadow: 
-    0 25px 60px -15px rgba(0, 0, 0, 0.6),
-    0 0 40px -10px rgba(99, 102, 241, 0.15),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
-    inset 0 -2px 6px 0 rgba(0, 0, 0, 0.5);
+    0 25px 60px -15px rgba(0, 0, 0, 0.7),
+    0 0 30px -10px rgba(0, 230, 57, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
 /* 3D Recessed Input Styling */
