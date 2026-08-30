@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, QrCode, ScanLine, Lock, Unlock, TrendingUp, CheckCircle, Edit3, ArrowRight } from 'lucide-react';
+import { ShieldCheck, QrCode, ScanLine, Lock, ArrowRight, HardDrive, Cpu, KeyRound, CheckCircle2 } from 'lucide-react';
 
 interface DashboardViewProps {
   onNavigate: (tab: 'encrypt' | 'decrypt' | 'about') => void;
@@ -11,12 +11,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
   const handleEncryptToMemory = () => {
     if (!volatileNote.trim()) return;
-    setNoteStatus('Encrypted in RAM (Volatile Memory)');
-    setTimeout(() => setNoteStatus(null), 3000);
+    setNoteStatus('Note locked in volatile RAM (disappears on page refresh)');
+    setTimeout(() => setNoteStatus(null), 3500);
+  };
+
+  const handleClearNote = () => {
+    setVolatileNote('');
+    setNoteStatus(null);
   };
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in max-w-7xl mx-auto">
       {/* Top Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200/60 dark:border-[#3b4b37]/40 pb-6">
         <div>
@@ -41,7 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Bento Grid Layout (Stitch exact layout) */}
+      {/* Bento Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* Left Column: Primary Action Cards */}
         <div className="md:col-span-12 lg:col-span-4 space-y-6">
@@ -94,35 +99,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Right Column: System Stats & Quick Note */}
+        {/* Right Column: Security Feature Info Cards & Quick Note */}
         <div className="md:col-span-12 lg:col-span-8 flex flex-col gap-6">
-          {/* Stat Cards */}
+          {/* Security Feature Info Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Stat Card 1 */}
-            <div className="rounded-2xl p-6 bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[12px] border border-slate-200 dark:border-[#3b4b37] flex flex-col justify-center items-center text-center shadow-sm">
-              <div className="font-mono text-xs text-slate-500 dark:text-[#b9ccb2] mb-2 uppercase tracking-widest">
-                Messages Transformed
+            {/* Feature 1: Zero-Knowledge */}
+            <div className="rounded-2xl p-6 bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[12px] border border-slate-200 dark:border-[#3b4b37] flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-xs text-slate-500 dark:text-[#b9ccb2] uppercase tracking-widest">
+                  Security Architecture
+                </div>
+                <div className="p-2 rounded-xl bg-[#00ff41]/10 text-[#00ff41]">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
               </div>
-              <div className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-[#00ff41] font-mono tracking-tight glow-effect px-4 py-1 rounded-xl">
-                8,492
+              <div className="my-2">
+                <div className="text-2xl font-black text-slate-900 dark:text-[#00ff41] font-mono tracking-tight">
+                  Zero-Knowledge
+                </div>
+                <p className="text-xs text-slate-500 dark:text-[#b9ccb2] mt-1">
+                  100% client-side. No passwords, messages or files ever leave your device.
+                </p>
               </div>
-              <div className="mt-3 flex items-center gap-1 text-[#00ff41] font-mono text-xs font-semibold">
-                <TrendingUp className="h-4 w-4" />
-                <span>+12% this week</span>
+              <div className="flex items-center gap-1 text-[#00ff41] font-mono text-xs font-semibold pt-2 border-t border-slate-100 dark:border-[#3b4b37]/30">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Air-Gapped Processing</span>
               </div>
             </div>
 
-            {/* Stat Card 2 */}
-            <div className="rounded-2xl p-6 bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[12px] border border-slate-200 dark:border-[#3b4b37] flex flex-col justify-center items-center text-center shadow-sm">
-              <div className="font-mono text-xs text-slate-500 dark:text-[#b9ccb2] mb-2 uppercase tracking-widest">
-                Local Security Audits
+            {/* Feature 2: 50MB Capacity */}
+            <div className="rounded-2xl p-6 bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[12px] border border-slate-200 dark:border-[#3b4b37] flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-xs text-slate-500 dark:text-[#b9ccb2] uppercase tracking-widest">
+                  Carrier Capacity
+                </div>
+                <div className="p-2 rounded-xl bg-[#00daf3]/10 text-[#00daf3]">
+                  <HardDrive className="h-5 w-5" />
+                </div>
               </div>
-              <div className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-[#00daf3] font-mono tracking-tight px-4 py-1 rounded-xl">
-                144
+              <div className="my-2">
+                <div className="text-2xl font-black text-slate-900 dark:text-[#00daf3] font-mono tracking-tight">
+                  Up to 50 MB
+                </div>
+                <p className="text-xs text-slate-500 dark:text-[#b9ccb2] mt-1">
+                  Embed full photos, audio or videos inside lossless Stego PNG images.
+                </p>
               </div>
-              <div className="mt-3 flex items-center gap-1 text-slate-500 dark:text-[#84967e] font-mono text-xs font-semibold">
-                <CheckCircle className="h-4 w-4 text-[#00ff41]" />
-                <span>All checks passed</span>
+              <div className="flex items-center gap-1 text-[#00daf3] font-mono text-xs font-semibold pt-2 border-t border-slate-100 dark:border-[#3b4b37]/30">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Lossless 3-Bit RGB LSB</span>
               </div>
             </div>
           </div>
@@ -130,88 +155,103 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           {/* Quick Secure Note Widget */}
           <div className="rounded-2xl bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[16px] border border-slate-200 dark:border-[#3b4b37] p-6 flex-1 flex flex-col shadow-sm">
             <div className="flex justify-between items-center mb-4 border-b border-slate-200/60 dark:border-[#3b4b37]/50 pb-3">
-              <h3 className="font-mono text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <Edit3 className="h-4 w-4 text-[#00ff41]" />
+              <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2 uppercase tracking-wider">
+                <span className="p-1 rounded bg-[#00ff41]/20 text-[#00ff41]">
+                  <KeyRound className="h-3.5 w-3.5" />
+                </span>
                 <span>Quick Secure Note</span>
               </h3>
               <button
-                onClick={() => setVolatileNote('')}
-                className="text-xs font-mono font-bold text-slate-400 hover:text-red-500 dark:text-[#b9ccb2] dark:hover:text-[#00ff41] transition-colors"
+                type="button"
+                onClick={handleClearNote}
+                className="text-xs font-mono font-bold text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors uppercase tracking-wider"
               >
-                CLEAR
+                Clear
               </button>
             </div>
 
             <textarea
               value={volatileNote}
               onChange={(e) => setVolatileNote(e.target.value)}
-              className="w-full flex-1 min-h-[100px] bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3.5 font-mono text-xs sm:text-sm text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border resize-none placeholder:text-slate-400 dark:placeholder:text-[#b9ccb2]/40"
-              placeholder="Enter volatile data here. Content is memory-only and vanishes on refresh..."
+              className="w-full flex-1 min-h-[90px] bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 font-mono text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border resize-none placeholder:text-slate-400 dark:placeholder:text-[#b9ccb2]/40"
+              placeholder="Enter volatile data here. Content is held only in browser memory and wiped on refresh..."
             />
 
-            <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-2">
-              {noteStatus ? (
-                <span className="text-xs font-mono text-[#00ff41] animate-pulse">
-                  ✓ {noteStatus}
-                </span>
-              ) : (
-                <span className="text-[11px] font-mono text-slate-400 dark:text-[#84967e]">
-                  RAM buffer only • Zero disk persist
-                </span>
-              )}
+            <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-400 dark:text-[#84967e]">
+                {noteStatus ? (
+                  <span className="text-[#00ff41] font-semibold">{noteStatus}</span>
+                ) : (
+                  <span>RAM buffer only • zero disk persistence</span>
+                )}
+              </span>
 
               <button
+                type="button"
                 onClick={handleEncryptToMemory}
-                className="w-full sm:w-auto bg-[#00ff41] text-black font-mono text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-[#00e639] transition-all shadow-md shadow-[#00ff41]/20 flex items-center justify-center gap-2"
+                className="bg-[#00ff41] text-black font-mono text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#00e639] transition-all flex items-center gap-2 shadow-sm active:scale-95"
               >
                 <span>Encrypt to Memory</span>
-                <Lock className="h-3.5 w-3.5 stroke-[2.5]" />
+                <Lock className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Latest Audit Activity Log Table */}
+      {/* Cryptographic Specifications & Active Cipher Stack */}
       <div className="rounded-2xl bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-[12px] border border-slate-200 dark:border-[#3b4b37] overflow-hidden shadow-sm">
-        <div className="px-6 py-4 border-b border-slate-200/60 dark:border-[#3b4b37]/50 flex justify-between items-center bg-slate-50/50 dark:bg-[#131314]/50">
-          <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">
-            Recent Cryptographic Activity
+        <div className="px-6 py-4 border-b border-slate-200/60 dark:border-[#3b4b37]/50 flex justify-between items-center bg-slate-50/50 dark:bg-[#201f20]/40">
+          <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-[#00ff41]" />
+            <span>Active Cryptosystem Specs</span>
           </h3>
-          <button 
+          <button
             onClick={() => onNavigate('about')}
-            className="font-mono text-[11px] font-bold text-cyan-600 dark:text-[#00daf3] hover:underline"
+            className="font-mono text-[11px] font-bold text-[#00daf3] hover:underline"
           >
-            VIEW FULL AUDIT
+            VIEW FULL AUDIT & SPECS
           </button>
         </div>
 
-        <div className="divide-y divide-slate-200/40 dark:divide-[#3b4b37]/30 font-mono text-xs">
-          <div className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+        <div className="divide-y divide-slate-200/60 dark:divide-[#3b4b37]/30 font-mono text-xs">
+          <div className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-3 w-1/3">
               <Lock className="h-4 w-4 text-[#00ff41]" />
-              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">ENC-8921-A</span>
+              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">AES-256-GCM</span>
             </div>
-            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center">AES-256-GCM</div>
-            <div className="text-[#00ff41] font-semibold w-1/3 text-right">Success</div>
+            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center text-[11px]">
+              256-Bit Key + 128-Bit AEAD Tag
+            </div>
+            <div className="text-[#00ff41] font-bold w-1/3 text-right">
+              Hardware Accelerated
+            </div>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+          <div className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-3 w-1/3">
-              <Unlock className="h-4 w-4 text-[#00daf3]" />
-              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">DEC-4410-B</span>
+              <Cpu className="h-4 w-4 text-[#00daf3]" />
+              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">Argon2id WASM</span>
             </div>
-            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center">Stego-LSB (50MB)</div>
-            <div className="text-[#00daf3] font-semibold w-1/3 text-right">Success</div>
+            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center text-[11px]">
+              Memory-Hard (16MB RAM / 2 Iter)
+            </div>
+            <div className="text-[#00daf3] font-bold w-1/3 text-right">
+              GPU-Resistant
+            </div>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+          <div className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-3 w-1/3">
-              <Shield className="h-4 w-4 text-emerald-500" />
-              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">SYS-AUDIT-9</span>
+              <HardDrive className="h-4 w-4 text-emerald-400" />
+              <span className="text-slate-800 dark:text-[#e5e2e3] font-semibold">3-Bit Stego Engine</span>
             </div>
-            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center">Integrity PolyVal</div>
-            <div className="text-emerald-500 font-semibold w-1/3 text-right">Verified 100%</div>
+            <div className="text-slate-500 dark:text-[#84967e] w-1/3 text-center text-[11px]">
+              Dynamic Auto-Scaling Carrier
+            </div>
+            <div className="text-emerald-400 font-bold w-1/3 text-right">
+              50 MB Max
+            </div>
           </div>
         </div>
       </div>
