@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, Sparkles, Clock, RefreshCw, Flame, Download } from 'lucide-react';
-import { decryptBinary, unpackPayload, bytesToBase64, type DecryptedResult } from '../crypto/crypto';
+import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, RefreshCw, Flame, Download, Lock } from 'lucide-react';
+import { decryptBinary, unpackPayload, type DecryptedResult } from '../crypto/crypto';
 import { decodeQRCodeFromImageData } from '../qr/qr';
 import { decodeStegoFromImageData } from '../stego/stego';
-import { Card3DTilt } from './Card3DTilt';
-import { CryptoAnimationOverlay } from './CryptoAnimationOverlay';
 
 export const DecryptScreen: React.FC = () => {
   // Navigation / Camera states
@@ -13,7 +11,6 @@ export const DecryptScreen: React.FC = () => {
   
   // Decoded payload states
   const [rawPayload, setRawPayload] = useState<Uint8Array | null>(null);
-  const [payloadBase64, setPayloadBase64] = useState<string | null>(null);
   const [payloadMetadata, setPayloadMetadata] = useState<{
     mode: number;
     isPassphraseMode: boolean;
@@ -33,7 +30,7 @@ export const DecryptScreen: React.FC = () => {
   const [copiedText, setCopiedText] = useState(false);
   
   // Timer States
-  const [clearTimer, setClearTimer] = useState<number>(60); // 60 seconds default
+  const [clearTimer] = useState<number>(60); // 60 seconds default
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Burn Warnings
@@ -100,150 +97,77 @@ export const DecryptScreen: React.FC = () => {
         scanAnimFrameRef.current = requestAnimationFrame(scanFrame);
       }
     } catch (err: any) {
-      console.error("Camera access failed:", err);
-      setCameraPermissionError("Camera access denied or unavailable. Please upload an image file below.");
+      console.error("Camera access error:", err);
+      setCameraPermissionError("Unable to access camera. Please check permissions or upload an image instead.");
       setIsScanning(false);
     }
   };
 
   const stopCamera = () => {
-    setIsScanning(false);
-    if (scanAnimFrameRef.current) {
-      cancelAnimationFrame(scanAnimFrameRef.current);
-      scanAnimFrameRef.current = null;
-    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+    if (scanAnimFrameRef.current) {
+      cancelAnimationFrame(scanAnimFrameRef.current);
+      scanAnimFrameRef.current = null;
     }
+    setIsScanning(false);
   };
 
-  // Compute a SHA-256 hash of a string
-  const getPayloadHash = async (dataStr: string): Promise<string> => {
-    const encoder = new TextEncoder();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(dataStr));
-    return Array.from(new Uint8Array(hashBuffer))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-  };
-
-  const processDecodedPayload = async (payload: Uint8Array, b64Data: string) => {
-    try {
-      const unpacked = unpackPayload(payload);
-      const isPassphraseMode = (unpacked.mode & 0x0F) === 0x01;
-      const isBurnAfterReading = (unpacked.mode & 0x10) !== 0;
-
-      setRawPayload(payload);
-      setPayloadBase64(b64Data);
-      setPayloadMetadata({
-        mode: unpacked.mode,
-        isPassphraseMode,
-        isBurnAfterReading
-      });
-
-      // Reset decryption inputs
-      setSecretInput('');
-      setDecryptionError(null);
-      clearDecryptedResult();
-
-      // Check Burn-After-Reading Local Storage tracking
-      if (isBurnAfterReading) {
-        const payloadHash = await getPayloadHash(b64Data);
-        const savedScans = localStorage.getItem('qrcrypt_scans');
-        const scansList = savedScans ? JSON.parse(savedScans) : [];
-        
-        if (scansList.includes(payloadHash)) {
-          setShowBurnWarning(true);
-        } else {
-          setShowBurnWarning(false);
-        }
-      } else {
-        setShowBurnWarning(false);
-      }
-    } catch (e) {
-      setDecryptionError("The scanned code is not a valid QRCrypt payload.");
-    }
-  };
-
-  // Core frame scanner loop
   const scanFrame = () => {
-    if (!isScanning || !videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) {
+      scanAnimFrameRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
 
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      let decodedPayload = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
-      if (!decodedPayload) {
-        decodedPayload = decodeStegoFromImageData(imgData.data);
-      }
-      
-      if (decodedPayload) {
-        stopCamera();
-        const b64Str = bytesToBase64(decodedPayload);
-        processDecodedPayload(decodedPayload, b64Str);
-        return;
-      }
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas');
     }
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      scanAnimFrameRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    const qrResult = decodeQRCodeFromImageData(imageData.data, imageData.width, imageData.height);
+    if (qrResult) {
+      stopCamera();
+      processPayload(qrResult);
+      return;
+    }
+
+    const stegoResult = decodeStegoFromImageData(imageData.data);
+    if (stegoResult) {
+      stopCamera();
+      processPayload(stegoResult);
+      return;
+    }
+
     scanAnimFrameRef.current = requestAnimationFrame(scanFrame);
   };
 
-  // Handle image file uploads
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      readQRFromFile(file);
-    }
+    if (!file) return;
+    processImageFile(file);
   };
 
-  const readQRFromFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          
-          let decoded = decodeQRCodeFromImageData(imgData.data, canvas.width, canvas.height);
-          if (!decoded) {
-            decoded = decodeStegoFromImageData(imgData.data);
-          }
-
-          if (decoded) {
-            const b64 = bytesToBase64(decoded);
-            processDecodedPayload(decoded, b64);
-          } else {
-            setDecryptionError("Could not find any readable QR code or hidden Stego payload in this image.");
-          }
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Drag and Drop Handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
     setIsDragging(false);
   };
 
@@ -251,14 +175,79 @@ export const DecryptScreen: React.FC = () => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      readQRFromFile(file);
-    } else {
-      setDecryptionError("Invalid file type. Please upload an image file (PNG/JPG).");
+    if (file) {
+      processImageFile(file);
     }
   };
 
-  // Execute decryption operation
+  const processImageFile = (file: File) => {
+    clearDecryptedResult();
+    setDecryptionError(null);
+    setRawPayload(null);
+    setPayloadMetadata(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          setDecryptionError("Failed to process image canvas.");
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        const qrResult = decodeQRCodeFromImageData(imageData.data, imageData.width, imageData.height);
+        if (qrResult) {
+          processPayload(qrResult);
+          return;
+        }
+
+        const stegoResult = decodeStegoFromImageData(imageData.data);
+        if (stegoResult) {
+          processPayload(stegoResult);
+          return;
+        }
+
+        setDecryptionError("No valid encrypted QR Code or Stego payload found in image.");
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processPayload = (bytes: Uint8Array) => {
+    try {
+      const unpacked = unpackPayload(bytes);
+      const isPassphrase = (unpacked.mode & 0x0F) === 0x01;
+      const isBurn = (unpacked.mode & 0x10) !== 0;
+
+      setRawPayload(bytes);
+      setPayloadMetadata({
+        mode: unpacked.mode,
+        isPassphraseMode: isPassphrase,
+        isBurnAfterReading: isBurn
+      });
+
+      if (isBurn) {
+        const hashStr = Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join('');
+        const seen = localStorage.getItem(`qrcrypt_seen_${hashStr}`);
+        if (seen) {
+          setShowBurnWarning(true);
+        } else {
+          localStorage.setItem(`qrcrypt_seen_${hashStr}`, Date.now().toString());
+        }
+      }
+    } catch (err: any) {
+      setDecryptionError("Failed to unpack payload metadata: " + err.message);
+    }
+  };
+
   const handleDecrypt = async () => {
     if (!rawPayload || !secretInput) return;
 
@@ -269,7 +258,6 @@ export const DecryptScreen: React.FC = () => {
       const result = await decryptBinary(rawPayload, secretInput);
       setDecryptedResult(result);
 
-      // Create blob URL for media files
       if (result.type === 'image' || result.type === 'video' || result.type === 'file') {
         if (mediaBlobUrl) {
           URL.revokeObjectURL(mediaBlobUrl);
@@ -278,45 +266,15 @@ export const DecryptScreen: React.FC = () => {
         const url = URL.createObjectURL(blob);
         setMediaBlobUrl(url);
       }
-      
-      // Start secure auto-clear countdown
-      setTimeLeft(clearTimer);
 
-      // Record Burn-After-Reading Hash on first successful decryption
-      if (payloadMetadata?.isBurnAfterReading && payloadBase64) {
-        const payloadHash = await getPayloadHash(payloadBase64);
-        const savedScans = localStorage.getItem('qrcrypt_scans');
-        const scansList = savedScans ? JSON.parse(savedScans) : [];
-        if (!scansList.includes(payloadHash)) {
-          scansList.push(payloadHash);
-          if (scansList.length > 500) {
-            scansList.shift();
-          }
-          localStorage.setItem('qrcrypt_scans', JSON.stringify(scansList));
-        }
+      if (clearTimer > 0) {
+        setTimeLeft(clearTimer);
       }
     } catch (err: any) {
-      setDecryptionError("Decryption failed. Invalid passphrase/key or tampered payload.");
-      clearDecryptedResult();
+      setDecryptionError(err.message || "Decryption failed. Please check the secret or passphrase.");
     } finally {
       setIsDecrypting(false);
     }
-  };
-
-  const copyToClipboard = () => {
-    if (!decryptedResult?.text) return;
-    navigator.clipboard.writeText(decryptedResult.text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
-  };
-
-  const downloadDecryptedMedia = () => {
-    if (!decryptedResult || !mediaBlobUrl) return;
-    const link = document.createElement('a');
-    link.href = mediaBlobUrl;
-    const ext = decryptedResult.mimeType.split('/')[1]?.split(';')[0] || (decryptedResult.type === 'video' ? 'mp4' : 'png');
-    link.download = decryptedResult.filename || `decrypted-${decryptedResult.type}-${Date.now()}.${ext}`;
-    link.click();
   };
 
   const clearDecryptedResult = () => {
@@ -333,7 +291,6 @@ export const DecryptScreen: React.FC = () => {
     stopCamera();
     setRawPayload(null);
     setPayloadMetadata(null);
-    setPayloadBase64(null);
     clearDecryptedResult();
     setDecryptionError(null);
     setTimeLeft(null);
@@ -341,315 +298,276 @@ export const DecryptScreen: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto animate-fade-in p-2">
-      <Card3DTilt>
-        <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
-              <Scan className="h-5 w-5 text-indigo-500" />
-              <span>Decrypt & Extract</span>
+    <div className="max-w-5xl mx-auto animate-fade-in relative z-10 space-y-6">
+      {/* Header section */}
+      <div className="flex justify-between items-center border-b border-slate-200/60 dark:border-[#3b4b37]/40 pb-4">
+        <div className="flex items-center gap-2">
+          <span className="p-2 rounded-xl bg-[#00daf3]/15 text-[#00daf3]">
+            <Scan className="h-5 w-5 stroke-[2.5]" />
+          </span>
+          <div>
+            <h2 className="font-mono text-sm sm:text-base font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Decrypt & Extract
             </h2>
-            {rawPayload && (
-              <button
-                onClick={resetScanner}
-                className="text-xs text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1.5"
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Scan Another</span>
-              </button>
-            )}
+            <p className="text-xs text-slate-500 dark:text-[#b9ccb2]">
+              Scan QR code or upload high-capacity Stego carrier PNG (up to 50MB)
+            </p>
           </div>
+        </div>
 
-          {/* Phase 1: Camera Scanner & Upload Selection */}
-          {!rawPayload && (
-            <div className="space-y-6">
-              {/* Live Camera Scanner Box */}
-              {isScanning ? (
-                <div className="relative rounded-3xl overflow-hidden border-2 border-indigo-500/30 aspect-video bg-black max-w-[500px] mx-auto shadow-2xl">
-                  <video ref={videoRef} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-[180px] h-[180px] md:w-[220px] md:h-[220px] border-2 border-indigo-500 rounded-3xl relative animate-pulse flex items-center justify-center shadow-lg shadow-indigo-500/40">
-                      <div className="absolute inset-0 border border-white/20 rounded-3xl" />
-                      <span className="text-[10px] text-white font-mono bg-black/70 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
-                        ALIGN IMAGE OR QR CODE
-                      </span>
+        {rawPayload && (
+          <button
+            onClick={resetScanner}
+            className="font-mono text-xs text-[#00daf3] hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-[#3b4b37] bg-white/70 dark:bg-[#1c1b1c]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Scan Another</span>
+          </button>
+        )}
+      </div>
+
+      {/* Main Scanner & Decrypt Container */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Input Source (Camera or Dropzone) */}
+        <div className={`${rawPayload ? 'lg:col-span-5' : 'lg:col-span-12'} transition-all duration-300`}>
+          <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-6 shadow-lg relative overflow-hidden">
+            {!rawPayload ? (
+              <div className="space-y-6">
+                {/* Live Camera Scanner Box */}
+                {isScanning ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-[#00daf3]/50 aspect-video bg-black max-w-[500px] mx-auto shadow-2xl">
+                    <video ref={videoRef} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-[180px] h-[180px] md:w-[220px] md:h-[220px] border-2 border-[#00daf3] rounded-2xl relative animate-pulse flex items-center justify-center shadow-lg shadow-[#00daf3]/30">
+                        {/* Corner brackets */}
+                        <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-[#00ff41]" />
+                        <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-[#00ff41]" />
+                        <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-[#00ff41]" />
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-[#00ff41]" />
+                        <span className="text-[10px] text-white font-mono bg-black/80 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border border-[#00daf3]/40">
+                          ALIGN QR / STEGO
+                        </span>
+                      </div>
                     </div>
+                    <button
+                      onClick={stopCamera}
+                      className="absolute bottom-4 left-1/2 -translate-x-1/2 py-1.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-mono font-bold shadow-lg transition-all"
+                    >
+                      Cancel Scan
+                    </button>
                   </div>
-                  <button
-                    onClick={stopCamera}
-                    className="absolute bottom-4 left-1/2 -translate-x-1/2 py-2 px-5 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-bold shadow-lg transition-all transform hover:scale-105"
-                  >
-                    Cancel Scan
-                  </button>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-2">
+                    <button
+                      onClick={startCamera}
+                      className="py-3 px-6 bg-[#00daf3] text-black font-mono font-bold text-xs sm:text-sm rounded-xl flex items-center gap-2 cursor-pointer shadow-lg shadow-[#00daf3]/20 hover:bg-[#00e3fd] transition-all"
+                    >
+                      <Scan className="h-4 w-4 stroke-[2.5]" />
+                      <span>Start Camera Scanner</span>
+                    </button>
+                    {cameraPermissionError && (
+                      <p className="text-[10px] font-mono text-red-500 mt-2 text-center">
+                        {cameraPermissionError}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Separator */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-200 dark:border-[#3b4b37]/50"></div>
+                  <span className="flex-shrink mx-4 text-slate-400 dark:text-[#84967e] text-xs font-mono font-bold">OR</span>
+                  <div className="flex-grow border-t border-slate-200 dark:border-[#3b4b37]/50"></div>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-4">
-                  <button
-                    onClick={startCamera}
-                    className="py-3.5 px-7 btn-3d-primary rounded-2xl font-bold text-sm flex items-center space-x-2.5 cursor-pointer shadow-xl"
-                  >
-                    <Scan className="h-5 w-5" />
-                    <span>Start Camera Scanner</span>
-                  </button>
-                  {cameraPermissionError && (
-                    <p className="text-[10px] text-red-500 font-medium mt-2 text-center max-w-[280px]">
-                      {cameraPermissionError}
-                    </p>
+
+                {/* File Dropzone */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-all ${
+                    isDragging
+                      ? 'border-[#00daf3] bg-[#00daf3]/10'
+                      : 'border-slate-200 dark:border-[#3b4b37] hover:border-[#00daf3] bg-slate-50/50 dark:bg-[#131314]/50'
+                  }`}
+                >
+                  <div className="p-3.5 rounded-2xl bg-[#00daf3]/15 text-[#00daf3] mb-3">
+                    <Upload className="h-7 w-7" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-white font-mono mb-1">
+                    Drag and drop your QR Code or Stego PNG Image
+                  </p>
+                  <p className="text-xs font-mono text-slate-400 dark:text-[#84967e] mb-4 max-w-[340px]">
+                    Supports QR scans and high-capacity Stego PNG carriers containing messages, photos, or videos up to 50MB.
+                  </p>
+                  <label className="py-2 px-4 bg-slate-200 dark:bg-[#2a2a2b] hover:bg-slate-300 dark:hover:bg-[#353436] rounded-xl text-xs font-mono font-bold cursor-pointer inline-flex items-center gap-2 text-slate-800 dark:text-[#e5e2e3] transition-all">
+                    <span>Browse Files</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : (
+              /* Payload Detected Preview */
+              <div className="space-y-4 font-mono text-xs">
+                <div className="p-3.5 rounded-xl bg-[#00ff41]/10 border border-[#00ff41]/30 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-[#00ff41] uppercase tracking-wider block">
+                      Payload Detected
+                    </span>
+                    <span className="text-slate-700 dark:text-[#e5e2e3]">
+                      Mode: {payloadMetadata?.isPassphraseMode ? 'Passphrase Protected' : 'Pre-Shared Key Protected'}
+                    </span>
+                  </div>
+                  {payloadMetadata?.isBurnAfterReading && (
+                    <span className="bg-amber-500/20 text-amber-500 text-[10px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 border border-amber-500/30">
+                      <Flame className="h-3 w-3" />
+                      <span>Burn</span>
+                    </span>
                   )}
                 </div>
-              )}
 
-              {/* Separator */}
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-slate-300/40 dark:border-slate-800/80"></div>
-                <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold uppercase tracking-wider font-mono">OR</span>
-                <div className="flex-grow border-t border-slate-300/40 dark:border-slate-800/80"></div>
-              </div>
-
-              {/* File Dropzone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all duration-300 ${
-                  isDragging
-                    ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                    : 'border-slate-300 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 bg-slate-50/50 dark:bg-slate-950/30'
-                }`}
-              >
-                <div className="p-4 rounded-2xl bg-indigo-500/10 text-indigo-500 mb-3">
-                  <Upload className="h-8 w-8" />
-                </div>
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Drag and drop your QR Code or Stego Image
-                </p>
-                <p className="text-xs text-slate-400 mb-5 max-w-[320px]">
-                  Supports PNG, JPG, or SVG files with hidden messages, photos, or videos up to 50MB.
-                </p>
-                <label className="py-2.5 px-5 btn-3d-secondary rounded-2xl text-xs font-bold cursor-pointer inline-flex items-center space-x-2">
-                  <span>Browse Files</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Phase 2: Decrypted Payload Configuration Input */}
-          {rawPayload && payloadMetadata && !decryptedResult && (
-            <div className="space-y-6 animate-slide-down max-w-[500px] mx-auto relative p-1 overflow-hidden">
-              <CryptoAnimationOverlay type="decrypt" isActive={isDecrypting} statusText="Verifying AES-GCM Tag & Decrypting..." />
-              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono text-indigo-500 dark:text-indigo-400 font-extrabold uppercase tracking-wider block">
-                    Payload Detected & Loaded
-                  </span>
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">
-                    Mode: {payloadMetadata.isPassphraseMode ? 'Passphrase Protected' : 'Pre-Shared Key Protected'}
-                  </span>
-                </div>
-                {payloadMetadata.isBurnAfterReading && (
-                  <span className="bg-orange-500/20 text-orange-600 dark:text-orange-400 text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider flex items-center space-x-1 border border-orange-500/30">
-                    <Flame className="h-3.5 w-3.5" />
-                    <span>Burn On Scan</span>
-                  </span>
-                )}
-              </div>
-
-              {showBurnWarning && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-700 dark:text-red-300 flex items-start space-x-3 shadow-sm">
-                  <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0 text-red-500" />
-                  <div>
-                    <p className="font-bold mb-1">⚠️ Burn Warning Detected!</p>
-                    <p>
-                      This payload has already been decrypted on this device in the past.
-                      If this is a secure single-use "Burn after reading" message, it might have been read or intercepted.
-                    </p>
+                {showBurnWarning && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>Warning: This single-use payload was already read previously.</span>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  {payloadMetadata.isPassphraseMode ? 'Decryption Passphrase' : 'AES Pre-Shared Key (Hex)'}
-                </label>
-                <div className="relative">
+                <div className="space-y-1.5">
+                  <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider block">
+                    {payloadMetadata?.isPassphraseMode ? 'Passphrase' : '256-Bit Raw Hex Key'}
+                  </label>
                   <input
-                    type={payloadMetadata.isPassphraseMode ? "password" : "text"}
+                    type="password"
                     value={secretInput}
                     onChange={(e) => setSecretInput(e.target.value)}
-                    placeholder={payloadMetadata.isPassphraseMode ? "Enter passphrase..." : "Enter 64 hex characters..."}
-                    className="w-full glass-input-3d rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
+                    placeholder={payloadMetadata?.isPassphraseMode ? 'Enter decryption passphrase...' : 'Enter 64-character hex key...'}
+                    className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border"
                   />
-                  <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={resetScanner}
-                  className="py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold cursor-pointer text-center"
-                >
-                  Cancel
-                </button>
+                {decryptionError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>{decryptionError}</span>
+                  </div>
+                )}
+
                 <button
                   onClick={handleDecrypt}
                   disabled={isDecrypting || !secretInput}
-                  className="py-3 px-4 btn-3d-primary disabled:opacity-50 rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                  className="w-full py-3 bg-[#00ff41] text-black font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-[#00e639] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-[#00ff41]/20"
                 >
-                  {isDecrypting ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Decrypting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Shield className="h-4 w-4" />
-                      <span>Decrypt Payload</span>
-                    </>
-                  )}
+                  <Key className="h-4 w-4 stroke-[2.5]" />
+                  <span>{isDecrypting ? 'Decrypting...' : 'Decrypt Payload'}</span>
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {decryptionError && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 max-w-[500px] mx-auto flex items-start space-x-2 text-left animate-shake shadow-sm">
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <span>{decryptionError}</span>
-            </div>
-          )}
-
-          {/* Phase 3: Success state - Render Decrypted Text, Image, or Video Output */}
-          {decryptedResult && (
-            <div className="space-y-6 animate-slide-down border-t border-slate-200/50 dark:border-slate-800/50 pt-6 max-w-[560px] mx-auto">
-              <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
-                  <Sparkles className="h-5 w-5" />
-                  <span className="text-sm font-bold">
-                    {decryptedResult.type === 'image'
-                      ? 'Decrypted Image'
-                      : decryptedResult.type === 'video'
-                      ? 'Decrypted Video'
-                      : 'Decrypted Message'}
-                  </span>
+        {/* Right Column: Decrypted Result Terminal / Player (when payload exists) */}
+        {rawPayload && (
+          <div className="lg:col-span-7">
+            <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-6 shadow-lg h-full flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center border-b border-slate-200/60 dark:border-[#3b4b37]/50 pb-3 mb-4">
+                  <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-[#00ff41]" />
+                    <span>Decrypted Payload Output</span>
+                  </h3>
+                  {decryptedResult && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#00ff41]/15 text-[#00ff41] border border-[#00ff41]/30">
+                      {decryptedResult.type.toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                
-                {timeLeft !== null && (
-                  <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-600 dark:text-slate-300 font-bold bg-white/80 dark:bg-slate-900 px-2.5 py-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <Clock className="h-3.5 w-3.5 text-indigo-500 animate-pulse" />
-                    <span>{timeLeft}s</span>
+
+                {decryptedResult ? (
+                  <div className="space-y-4">
+                    {/* Text result */}
+                    {decryptedResult.type === 'text' && (
+                      <div className="bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-4 font-mono text-xs sm:text-sm text-slate-800 dark:text-[#00ff41] whitespace-pre-wrap select-all min-h-[160px]">
+                        {decryptedResult.text}
+                      </div>
+                    )}
+
+                    {/* Image result */}
+                    {decryptedResult.type === 'image' && mediaBlobUrl && (
+                      <div className="flex flex-col items-center justify-center p-3 bg-black/10 dark:bg-[#131314] rounded-xl border border-slate-200 dark:border-[#3b4b37]/50">
+                        <img src={mediaBlobUrl} alt="Decrypted file" className="max-h-64 object-contain rounded-lg shadow-md" />
+                      </div>
+                    )}
+
+                    {/* Video result */}
+                    {decryptedResult.type === 'video' && mediaBlobUrl && (
+                      <div className="rounded-xl overflow-hidden bg-black border border-slate-200 dark:border-[#3b4b37]/50">
+                        <video src={mediaBlobUrl} controls className="w-full max-h-72 object-contain" />
+                      </div>
+                    )}
+
+                    {/* Generic file */}
+                    {decryptedResult.type === 'file' && (
+                      <div className="p-4 bg-slate-50 dark:bg-[#131314] rounded-xl font-mono text-xs text-slate-700 dark:text-[#e5e2e3]">
+                        <p className="font-bold">{decryptedResult.filename || 'Encrypted Binary File'}</p>
+                        <p className="text-slate-400 text-[11px] mt-1">{decryptedResult.mimeType || 'application/octet-stream'}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-400 dark:text-[#84967e] font-mono text-xs">
+                    <Lock className="h-10 w-10 text-slate-400 dark:text-[#3b4b37] mb-2" />
+                    <span>Enter your passphrase or hex key on the left to reveal content</span>
                   </div>
                 )}
               </div>
 
-              {/* Text Message Result */}
-              {decryptedResult.type === 'text' && (
-                <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-5 bg-white/70 dark:bg-slate-950/60 shadow-xl min-h-[140px] max-h-[300px] overflow-y-auto font-sans text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap select-text break-words">
-                  {decryptedResult.text}
-                </div>
-              )}
-
-              {/* Image Result */}
-              {decryptedResult.type === 'image' && mediaBlobUrl && (
-                <div className="space-y-3">
-                  <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-3 bg-black/5 dark:bg-black/30 shadow-xl flex items-center justify-center overflow-hidden max-h-[360px]">
-                    <img src={mediaBlobUrl} alt="Decrypted file" className="max-h-[340px] w-auto object-contain rounded-2xl" />
-                  </div>
-                  {decryptedResult.filename && (
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono px-2">
-                      <span className="truncate">{decryptedResult.filename}</span>
-                      <span>{(decryptedResult.data.length / 1024).toFixed(1)} KB</span>
-                    </div>
+              {/* Action Buttons */}
+              {decryptedResult && (
+                <div className="pt-4 border-t border-slate-200/60 dark:border-[#3b4b37]/40 flex flex-wrap gap-2 mt-4 font-mono text-xs">
+                  {decryptedResult.type === 'text' && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(decryptedResult.text || '');
+                        setCopiedText(true);
+                        setTimeout(() => setCopiedText(false), 2000);
+                      }}
+                      className="flex-1 py-2.5 px-4 bg-[#00ff41] text-black font-bold rounded-xl flex items-center justify-center gap-1.5 hover:bg-[#00e639]"
+                    >
+                      {copiedText ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      <span>{copiedText ? 'Copied!' : 'Copy Text'}</span>
+                    </button>
                   )}
-                </div>
-              )}
 
-              {/* Video Result */}
-              {decryptedResult.type === 'video' && mediaBlobUrl && (
-                <div className="space-y-3">
-                  <div className="relative border-2 border-slate-300/40 dark:border-slate-800/80 rounded-3xl p-3 bg-black shadow-xl overflow-hidden">
-                    <video src={mediaBlobUrl} controls autoPlay className="w-full max-h-[340px] rounded-2xl" />
-                  </div>
-                  {decryptedResult.filename && (
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono px-2">
-                      <span className="truncate">{decryptedResult.filename}</span>
-                      <span>{(decryptedResult.data.length / (1024 * 1024)).toFixed(2)} MB</span>
-                    </div>
+                  {mediaBlobUrl && (
+                    <a
+                      href={mediaBlobUrl}
+                      download={decryptedResult.filename || (decryptedResult.type === 'image' ? 'decrypted-photo.png' : 'decrypted-video.mp4')}
+                      className="flex-1 py-2.5 px-4 bg-[#00daf3] text-black font-bold rounded-xl flex items-center justify-center gap-1.5 hover:bg-[#00e3fd]"
+                    >
+                      <Download className="h-4 w-4 stroke-[2.5]" />
+                      <span>Download {decryptedResult.type === 'image' ? 'Image' : 'Video'}</span>
+                    </a>
                   )}
-                </div>
-              )}
 
-              {/* Control Actions (Timer + Download/Copy + Wipe) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center space-x-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Auto-clear:
-                  </span>
-                  <select
-                    value={clearTimer}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setClearTimer(val);
-                      if (timeLeft !== null) setTimeLeft(val);
-                    }}
-                    className="bg-white dark:bg-slate-900 border border-slate-300/60 dark:border-slate-800 rounded-xl text-xs p-1.5 font-bold text-slate-700 dark:text-slate-300 outline-none shadow-inner"
-                  >
-                    <option value={10}>10s</option>
-                    <option value={30}>30s</option>
-                    <option value={60}>60s</option>
-                    <option value={120}>2m</option>
-                    <option value={300}>5m</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center space-x-2">
                   <button
                     onClick={clearDecryptedResult}
-                    className="py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors border border-red-500/20 cursor-pointer"
+                    className="py-2.5 px-4 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-xl font-bold flex items-center justify-center gap-1.5"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Wipe Now</span>
+                    <Trash2 className="h-4 w-4" />
+                    <span>Wipe</span>
                   </button>
-
-                  {decryptedResult.type === 'text' ? (
-                    <button
-                      onClick={copyToClipboard}
-                      className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      {copiedText ? (
-                        <>
-                          <Check className="h-4 w-4 text-green-300" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-4 w-4" />
-                          <span>Copy Message</span>
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={downloadDecryptedMedia}
-                      className="py-2.5 px-5 btn-3d-primary rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span>Download {decryptedResult.type === 'video' ? 'Video' : 'Image'}</span>
-                    </button>
-                  )}
                 </div>
-              </div>
+              )}
             </div>
-          )}
-        </div>
-      </Card3DTilt>
-      {/* Hidden canvas for video frame extraction */}
-      <canvas ref={canvasRef} className="hidden" />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

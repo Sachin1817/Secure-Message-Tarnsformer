@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Sparkles, Video, FileText, UploadCloud, Info } from 'lucide-react';
-import { encryptBinary, packMediaData, generatePreSharedKey, deriveKeyFromPassphrase, packPayload } from '../crypto/crypto';
+import React, { useState, useEffect } from 'react';
+import { Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Video, FileText, UploadCloud, Info, Cpu, Shield } from 'lucide-react';
+import { encryptBinary, packMediaData, generatePreSharedKey } from '../crypto/crypto';
 import { generateQRCode } from '../qr/qr';
 import { encodeStegoImage, generateRandomCoverImage } from '../stego/stego';
-import { Card3DTilt } from './Card3DTilt';
-import { CryptoAnimationOverlay } from './CryptoAnimationOverlay';
 
 // Max limits
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -28,8 +26,6 @@ export const EncryptScreen: React.FC = () => {
   
   // Carrier State: QR Code vs Steganography Image
   const [carrier, setCarrier] = useState<'qr' | 'stego'>('qr');
-  const [stegoSource, setStegoSource] = useState<'random' | 'custom'>('random');
-  const [customCoverSrc, setCustomCoverSrc] = useState<string | null>(null);
   const [randomCoverSrc, setRandomCoverSrc] = useState<string | null>(null);
 
   // Passphrase Mode States
@@ -38,11 +34,9 @@ export const EncryptScreen: React.FC = () => {
   
   // Pre-shared Key States
   const [presharedKey, setPresharedKey] = useState('');
-  const [showPresharedKeyWarning, setShowPresharedKeyWarning] = useState(true);
 
   // General States
   const [burnAfterReading, setBurnAfterReading] = useState(false);
-  const [errorCorrection, setErrorCorrection] = useState<'L' | 'M' | 'Q' | 'H'>('M');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrSvgContent, setQrSvgContent] = useState<string | null>(null);
   const [stegoDataUrl, setStegoDataUrl] = useState<string | null>(null);
@@ -54,19 +48,10 @@ export const EncryptScreen: React.FC = () => {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedResult, setCopiedResult] = useState(false);
 
-  // Performance Optimization: Cache the derived CryptoKey
-  const cachedKeyRef = useRef<{
-    passphrase: string;
-    kdf: 'argon2id' | 'pbkdf2';
-    saltHex: string;
-    key: CryptoKey;
-  } | null>(null);
-
   // Initialize pre-shared key
   const initPresharedKey = () => {
     const key = generatePreSharedKey();
     setPresharedKey(key);
-    setShowPresharedKeyWarning(true);
   };
 
   // Generate initial random cover image for stego mode
@@ -79,7 +64,7 @@ export const EncryptScreen: React.FC = () => {
     if (mode === 'preshared' && !presharedKey) {
       initPresharedKey();
     }
-  }, [mode]);
+  }, [mode, presharedKey]);
 
   useEffect(() => {
     if (!randomCoverSrc) {
@@ -87,7 +72,7 @@ export const EncryptScreen: React.FC = () => {
     }
   }, []);
 
-  // When changing contentType to video, force carrier to stego (video exceeds QR capacity)
+  // When changing contentType to video, force carrier to stego
   useEffect(() => {
     if (contentType === 'video') {
       setCarrier('stego');
@@ -99,226 +84,141 @@ export const EncryptScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxSize = contentType === 'video' ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
-    if (file.size > maxSize) {
-      setError(`File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum limit of 50 MB.`);
+    if (contentType === 'video' && file.size > MAX_VIDEO_SIZE) {
+      setError(`Video exceeds maximum allowed size of 50 MB (File is ${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
       return;
     }
 
-    try {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      setMediaFile(file);
-      setMediaBytes(bytes);
-      
-      // Revoke previous preview URL
-      if (mediaPreviewUrl) {
-        URL.revokeObjectURL(mediaPreviewUrl);
-      }
-      const preview = URL.createObjectURL(file);
-      setMediaPreviewUrl(preview);
-      setError(null);
-
-      // If file is larger than QR limit, automatically switch carrier to stego
-      if (file.size > MAX_QR_SAFE_SIZE) {
-        setCarrier('stego');
-      }
-    } catch (err: any) {
-      setError("Failed to read file: " + (err?.message || String(err)));
+    if (contentType === 'image' && file.size > MAX_IMAGE_SIZE) {
+      setError(`Image exceeds maximum allowed size of 50 MB (File is ${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+      return;
     }
-  };
 
-  const removeSelectedFile = () => {
-    setMediaFile(null);
-    setMediaBytes(null);
+    setError(null);
+    setMediaFile(file);
+
+    const arrayBuffer = await file.arrayBuffer();
+    setMediaBytes(new Uint8Array(arrayBuffer));
+
     if (mediaPreviewUrl) {
       URL.revokeObjectURL(mediaPreviewUrl);
-      setMediaPreviewUrl(null);
     }
-    setQrDataUrl(null);
-    setQrSvgContent(null);
-    setStegoDataUrl(null);
+    const previewUrl = URL.createObjectURL(file);
+    setMediaPreviewUrl(previewUrl);
+
+    if (file.size > MAX_QR_SAFE_SIZE) {
+      setCarrier('stego');
+    }
   };
 
-  // Debounced / Triggered Generation
-  useEffect(() => {
-    let active = true;
-    const generateTimer = setTimeout(() => {
-      if (active) {
-        triggerGeneration();
-      }
-    }, mode === 'passphrase' ? 400 : 100);
+  // Remove selected media
+  const removeSelectedFile = () => {
+    if (mediaPreviewUrl) {
+      URL.revokeObjectURL(mediaPreviewUrl);
+    }
+    setMediaFile(null);
+    setMediaBytes(null);
+    setMediaPreviewUrl(null);
+    setError(null);
+  };
 
-    return () => {
-      active = false;
-      clearTimeout(generateTimer);
+  // Automatic Encryption Trigger
+  useEffect(() => {
+    const runEncryption = async () => {
+      let rawPayloadBytes: Uint8Array | null = null;
+
+      if (contentType === 'text') {
+        if (!message.trim()) {
+          setQrDataUrl(null);
+          setQrSvgContent(null);
+          setStegoDataUrl(null);
+          setError(null);
+          return;
+        }
+        const textEncoder = new TextEncoder();
+        rawPayloadBytes = packMediaData('text', textEncoder.encode(message), 'text/plain', 'message.txt');
+      } else if (contentType === 'image' || contentType === 'video') {
+        if (!mediaBytes || !mediaFile) {
+          setQrDataUrl(null);
+          setQrSvgContent(null);
+          setStegoDataUrl(null);
+          return;
+        }
+        rawPayloadBytes = packMediaData(contentType, mediaBytes, mediaFile.type || 'application/octet-stream', mediaFile.name);
+      }
+
+      if (!rawPayloadBytes) return;
+
+      if (mode === 'passphrase' && !passphrase) {
+        setQrDataUrl(null);
+        setQrSvgContent(null);
+        setStegoDataUrl(null);
+        return;
+      }
+
+      if (mode === 'preshared' && !presharedKey) {
+        return;
+      }
+
+      try {
+        setError(null);
+        setIsComputingKey(true);
+
+        const encryptedBytes = await encryptBinary(
+          rawPayloadBytes,
+          mode === 'passphrase' ? passphrase : presharedKey,
+          mode,
+          kdfMethod,
+          burnAfterReading
+        );
+
+        if (carrier === 'qr') {
+          if (encryptedBytes.length > 2953) {
+            setError(`Payload (${(encryptedBytes.length / 1024).toFixed(1)} KB) exceeds physical QR code limit. Switched to Stego PNG.`);
+            setCarrier('stego');
+            setIsComputingKey(false);
+            return;
+          }
+
+          const pngUrl = await generateQRCode(encryptedBytes, 'png', 'M');
+          const svgCode = await generateQRCode(encryptedBytes, 'svg', 'M');
+          setQrDataUrl(pngUrl);
+          setQrSvgContent(svgCode);
+          setStegoDataUrl(null);
+        } else {
+          if (randomCoverSrc) {
+            const stegoUrl = await encodeStegoImage(randomCoverSrc, encryptedBytes);
+            setStegoDataUrl(stegoUrl);
+            setQrDataUrl(null);
+            setQrSvgContent(null);
+          }
+        }
+      } catch (err: any) {
+        console.error("Encryption error:", err);
+        setError(err.message || "Failed to encrypt payload");
+      } finally {
+        setIsComputingKey(false);
+      }
     };
+
+    const debounceTimer = setTimeout(() => {
+      runEncryption();
+    }, 250);
+
+    return () => clearTimeout(debounceTimer);
   }, [
     contentType,
     message,
     mediaBytes,
+    mediaFile,
     mode,
-    carrier,
-    stegoSource,
-    customCoverSrc,
-    randomCoverSrc,
     passphrase,
+    presharedKey,
     kdfMethod,
-    burnAfterReading,
-    errorCorrection,
-    presharedKey
+    carrier,
+    randomCoverSrc,
+    burnAfterReading
   ]);
-
-  const triggerGeneration = async () => {
-    // Check if there is data to encrypt
-    const hasData = contentType === 'text' ? !!message : !!mediaBytes;
-    if (!hasData) {
-      setQrDataUrl(null);
-      setQrSvgContent(null);
-      setStegoDataUrl(null);
-      setError(null);
-      return;
-    }
-
-    if (mode === 'passphrase' && passphrase.length < 8) {
-      setError("Passphrase must be at least 8 characters long.");
-      setQrDataUrl(null);
-      setQrSvgContent(null);
-      setStegoDataUrl(null);
-      return;
-    }
-
-    if (mode === 'preshared' && presharedKey.length !== 64) {
-      setError("Pre-shared key must be exactly 64 hex characters (32 bytes).");
-      setQrDataUrl(null);
-      setQrSvgContent(null);
-      setStegoDataUrl(null);
-      return;
-    }
-
-    if (carrier === 'stego' && stegoSource === 'custom' && !customCoverSrc) {
-      setError("Please upload a cover image to hide your encrypted file inside.");
-      setStegoDataUrl(null);
-      return;
-    }
-
-    setIsComputingKey(true);
-    setError(null);
-
-    try {
-      let unencryptedPayload: Uint8Array;
-
-      if (contentType === 'text') {
-        const encoder = new TextEncoder();
-        const textBytes = encoder.encode(message);
-        unencryptedPayload = packMediaData('text', textBytes, 'text/plain', '');
-      } else if (contentType === 'image' && mediaBytes && mediaFile) {
-        unencryptedPayload = packMediaData('image', mediaBytes, mediaFile.type || 'image/png', mediaFile.name);
-      } else if (contentType === 'video' && mediaBytes && mediaFile) {
-        unencryptedPayload = packMediaData('video', mediaBytes, mediaFile.type || 'video/mp4', mediaFile.name);
-      } else {
-        throw new Error("Missing content to encrypt.");
-      }
-
-      // Check if trying to put large data into QR code
-      if (carrier === 'qr' && unencryptedPayload.length > MAX_QR_SAFE_SIZE) {
-        setCarrier('stego');
-        setError("Content exceeds QR code physical capacity (1.8 KB). Automatically switched to Stego Image Carrier (supports up to 50 MB).");
-      }
-
-      let payloadBytes: Uint8Array;
-
-      if (mode === 'passphrase') {
-        let keyToUse: CryptoKey;
-        const currentCache = cachedKeyRef.current;
-        
-        if (currentCache && currentCache.passphrase === passphrase && currentCache.kdf === kdfMethod) {
-          keyToUse = currentCache.key;
-        } else {
-          const freshSalt = crypto.getRandomValues(new Uint8Array(16));
-          const derivation = await deriveKeyFromPassphrase(passphrase, freshSalt, kdfMethod);
-          keyToUse = derivation.key;
-          
-          cachedKeyRef.current = {
-            passphrase,
-            kdf: kdfMethod,
-            saltHex: Array.from(freshSalt).map(b => b.toString(16).padStart(2, '0')).join(''),
-            key: keyToUse
-          };
-        }
-
-        const nonce = crypto.getRandomValues(new Uint8Array(12));
-        const encryptedBuffer = await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv: nonce, tagLength: 128 },
-          keyToUse,
-          unencryptedPayload as any
-        );
-
-        const saltBytes = new Uint8Array(
-          (cachedKeyRef.current!.saltHex.match(/.{1,2}/g) || []).map(byte => parseInt(byte, 16))
-        );
-        const encryptedData = new Uint8Array(encryptedBuffer);
-        const modeFlag = burnAfterReading ? (0x01 | 0x10) : 0x01;
-        
-        payloadBytes = packPayload(1, modeFlag, saltBytes, nonce, encryptedData);
-      } else {
-        payloadBytes = await encryptBinary(unencryptedPayload, presharedKey, 'preshared', kdfMethod, burnAfterReading);
-      }
-
-      if (carrier === 'qr') {
-        const pngUrl = await generateQRCode(payloadBytes, 'png', errorCorrection);
-        const svgSrc = await generateQRCode(payloadBytes, 'svg', errorCorrection);
-        setQrDataUrl(pngUrl);
-        setQrSvgContent(svgSrc);
-        setStegoDataUrl(null);
-      } else {
-        const coverToUse = stegoSource === 'custom' ? customCoverSrc : (randomCoverSrc || generateRandomCoverImage());
-        const stegoPng = await encodeStegoImage(coverToUse, payloadBytes);
-        setStegoDataUrl(stegoPng);
-        setQrDataUrl(null);
-        setQrSvgContent(null);
-      }
-      setError(null);
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.message || "Failed to generate encrypted payload.");
-      setQrDataUrl(null);
-      setQrSvgContent(null);
-      setStegoDataUrl(null);
-    } finally {
-      setIsComputingKey(false);
-    }
-  };
-
-  const handleCustomCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        setError('Please upload a valid image file (PNG, JPG, WebP).');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        setCustomCoverSrc(evt.target?.result as string);
-        setStegoSource('custom');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const getPassphraseStrength = (pwd: string) => {
-    if (!pwd) return { label: '', color: 'bg-slate-200 dark:bg-slate-800', width: 'w-0' };
-    if (pwd.length < 8) return { label: 'Too short', color: 'bg-red-500', width: 'w-1/4' };
-    
-    let strength = 0;
-    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) strength += 1;
-    if (/[0-9]/.test(pwd)) strength += 1;
-    if (/[^A-Za-z0-9]/.test(pwd)) strength += 1;
-
-    if (strength === 0) return { label: 'Weak', color: 'bg-red-500', width: 'w-2/4' };
-    if (strength === 1) return { label: 'Medium', color: 'bg-amber-500', width: 'w-3/4' };
-    return { label: 'Strong', color: 'bg-green-500', width: 'w-full' };
-  };
 
   const copyKeyToClipboard = () => {
     navigator.clipboard.writeText(presharedKey);
@@ -366,124 +266,100 @@ export const EncryptScreen: React.FC = () => {
     }
   };
 
-  const strengthInfo = getPassphraseStrength(passphrase);
   const activeResultUrl = carrier === 'qr' ? qrDataUrl : stegoDataUrl;
   const isLargeMedia = (contentType === 'image' && (mediaFile?.size || 0) > MAX_QR_SAFE_SIZE) || contentType === 'video';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in p-2 max-w-6xl mx-auto">
-      {/* Configuration controls */}
-      <div className="lg:col-span-7 space-y-6">
-        <Card3DTilt>
-          <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold flex items-center space-x-2 text-slate-800 dark:text-white">
-                <Shield className="h-5 w-5 text-indigo-500" />
-                <span>Encrypt & Conceal</span>
-              </h2>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                Max 50 MB
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto animate-fade-in relative z-10">
+      {/* COLUMN 1: Plaintext Stream / Media Input */}
+      <div className="col-span-1 lg:col-span-4 flex flex-col gap-4">
+        <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-5 flex flex-col h-full shadow-lg relative group">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 border-b border-slate-200/60 dark:border-[#3b4b37]/50 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-[#00daf3]/15 text-[#00daf3]">
+                <FileText className="h-4 w-4 stroke-[2.5]" />
               </span>
+              <h2 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+                Plaintext Stream
+              </h2>
             </div>
+            <span className="font-mono text-[10px] font-bold text-slate-500 dark:text-[#b9ccb2] px-2 py-0.5 rounded bg-slate-100 dark:bg-[#2a2a2b] border border-slate-200 dark:border-[#3b4b37]/50">
+              {contentType === 'text' ? 'UTF-8' : contentType === 'image' ? 'IMG/RAW' : 'VID/50MB'}
+            </span>
+          </div>
 
-            {/* Input Content Type Selector: Text vs Image vs Video */}
-            <div>
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                Select Content to Encrypt
-              </label>
-              <div className="grid grid-cols-3 gap-2 bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl border border-slate-300/40 dark:border-slate-800/80 shadow-inner">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContentType('text');
-                    removeSelectedFile();
-                  }}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
-                    contentType === 'text'
-                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Text Message</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContentType('image');
-                    setMessage('');
-                  }}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
-                    contentType === 'image'
-                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <ImageIcon className="h-4 w-4" />
-                  <span>Image File</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContentType('video');
-                    setMessage('');
-                  }}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
-                    contentType === 'video'
-                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <Video className="h-4 w-4" />
-                  <span>Video File</span>
-                </button>
-              </div>
-            </div>
+          {/* Target Content Type Tabs */}
+          <div className="grid grid-cols-3 gap-1.5 bg-slate-100 dark:bg-[#131314] p-1 rounded-xl border border-slate-200 dark:border-[#3b4b37]/50 mb-3 font-mono text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setContentType('text');
+                removeSelectedFile();
+              }}
+              className={`py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                contentType === 'text'
+                  ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                  : 'text-slate-500 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Text</span>
+            </button>
 
-            {/* Plaintext Input (if text selected) */}
-            {contentType === 'text' && (
-              <div className="space-y-1 animate-fade-in">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Plaintext Message
-                  </label>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {message.length} chars
-                  </span>
-                </div>
-                <textarea
-                  value={message}
-                  onChange={(e) => {
-                    setMessage(e.target.value);
-                    if (!e.target.value) cachedKeyRef.current = null;
-                  }}
-                  placeholder="Type your confidential message here..."
-                  rows={4}
-                  className="w-full glass-input-3d rounded-2xl p-4 text-sm font-sans resize-none"
-                />
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setContentType('image');
+                setMessage('');
+              }}
+              className={`py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                contentType === 'image'
+                  ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                  : 'text-slate-500 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              <span>Image</span>
+            </button>
 
-            {/* Media Upload Area (if image or video selected) */}
-            {(contentType === 'image' || contentType === 'video') && (
-              <div className="space-y-3 animate-fade-in">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  Upload {contentType === 'image' ? 'Image' : 'Video'} to Encrypt (Up to 50 MB)
-                </label>
+            <button
+              type="button"
+              onClick={() => {
+                setContentType('video');
+                setMessage('');
+              }}
+              className={`py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                contentType === 'video'
+                  ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                  : 'text-slate-500 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Video className="h-3.5 w-3.5" />
+              <span>Video</span>
+            </button>
+          </div>
 
+          {/* Input Area */}
+          <div className="flex-1 flex flex-col min-h-[220px]">
+            {contentType === 'text' ? (
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                className="w-full flex-1 bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-4 font-mono text-xs sm:text-sm text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border resize-none placeholder:text-slate-400 dark:placeholder:text-[#b9ccb2]/40"
+                placeholder="> Initialize secure text sequence..."
+              />
+            ) : (
+              <div className="flex-1 flex flex-col justify-center">
                 {!mediaFile ? (
-                  <label className="border-2 border-dashed border-indigo-500/30 hover:border-indigo-500 dark:border-indigo-400/30 dark:hover:border-indigo-400 rounded-3xl p-6 flex flex-col items-center justify-center space-y-3 cursor-pointer bg-slate-50/50 dark:bg-slate-900/40 hover:bg-indigo-500/5 transition-all">
-                    <div className="p-3.5 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                      <UploadCloud className="h-8 w-8" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                        Click or drag & drop {contentType === 'image' ? 'photo' : 'video'} here
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {contentType === 'image' ? 'PNG, JPG, WebP, GIF' : 'MP4, WebM, MOV'} (Max 50MB)
-                      </p>
-                    </div>
+                  <label className="border-2 border-dashed border-slate-300 dark:border-[#3b4b37] hover:border-[#00ff41] rounded-2xl p-6 flex flex-col items-center justify-center space-y-2 cursor-pointer bg-slate-50 dark:bg-[#131314] transition-colors">
+                    <UploadCloud className="h-8 w-8 text-[#00ff41]" />
+                    <span className="text-xs font-mono font-bold text-slate-700 dark:text-[#e5e2e3]">
+                      Upload {contentType === 'image' ? 'Image' : 'Video'} File
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-[#84967e]">
+                      Max 50 MB • MP4, WebM, PNG, JPG
+                    </span>
                     <input
                       type="file"
                       accept={contentType === 'image' ? 'image/*' : 'video/*'}
@@ -492,162 +368,65 @@ export const EncryptScreen: React.FC = () => {
                     />
                   </label>
                 ) : (
-                  <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3 overflow-hidden">
-                        <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500 flex-shrink-0">
-                          {contentType === 'image' ? <ImageIcon className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-                        </div>
-                        <div className="truncate">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                            {mediaFile.name}
-                          </p>
-                          <p className="text-[10px] text-slate-400 font-mono">
-                            {(mediaFile.size / (1024 * 1024)).toFixed(2)} MB • {mediaFile.type || 'Binary'}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={removeSelectedFile}
-                        className="text-xs text-red-500 hover:text-red-600 font-semibold px-2 py-1 rounded-lg hover:bg-red-500/10 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    {/* Preview Thumbnail / Video */}
-                    {mediaPreviewUrl && (
-                      <div className="max-h-48 rounded-xl overflow-hidden bg-black/5 flex items-center justify-center">
-                        {contentType === 'image' ? (
-                          <img src={mediaPreviewUrl} alt="Preview" className="max-h-48 object-contain rounded-xl" />
-                        ) : (
-                          <video src={mediaPreviewUrl} controls className="max-h-48 rounded-xl w-full" />
-                        )}
-                      </div>
+                  <div className="p-3 bg-slate-50 dark:bg-[#131314] rounded-2xl border border-slate-200 dark:border-[#3b4b37] flex flex-col items-center space-y-2">
+                    {contentType === 'image' && mediaPreviewUrl && (
+                      <img src={mediaPreviewUrl} alt="Preview" className="max-h-36 rounded-lg object-contain" />
                     )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Carrier Selector (QR vs Stego) */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  Output Format (Carrier)
-                </label>
-                {isLargeMedia && (
-                  <span className="text-[10px] text-amber-500 dark:text-amber-400 flex items-center space-x-1 font-mono">
-                    <Info className="h-3 w-3" />
-                    <span>Large files require Stego PNG</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl border border-slate-300/40 dark:border-slate-800/80 shadow-inner">
-                <button
-                  type="button"
-                  disabled={isLargeMedia}
-                  onClick={() => setCarrier('qr')}
-                  className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 transition-all duration-200 ${
-                    isLargeMedia
-                      ? 'opacity-40 cursor-not-allowed text-slate-400'
-                      : carrier === 'qr'
-                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <QrCode className="h-4 w-4" />
-                  <span>QR Code</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCarrier('stego')}
-                  className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center space-x-2 transition-all duration-200 ${
-                    carrier === 'stego'
-                      ? 'bg-gradient-to-b from-white to-slate-100 dark:from-indigo-600 dark:to-indigo-700 text-indigo-600 dark:text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <ImageIcon className="h-4 w-4" />
-                  <span>Stego Image (Up to 50MB)</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Stego Cover Settings */}
-            {carrier === 'stego' && (
-              <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-2xl p-4 space-y-3 animate-slide-down">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>Cover Image Settings</span>
-                  </label>
-                  {stegoSource === 'random' && (
-                    <button
-                      type="button"
-                      onClick={regenerateRandomCover}
-                      className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      <span>New Random Pattern</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStegoSource('random')}
-                    className={`py-1.5 px-3 rounded-xl text-xs font-medium transition-all ${
-                      stegoSource === 'random'
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
-                    }`}
-                  >
-                    Auto-Generated Pattern
-                  </button>
-                  <label className={`py-1.5 px-3 rounded-xl text-xs font-medium text-center transition-all cursor-pointer ${
-                    stegoSource === 'custom'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
-                  }`}>
-                    <span>Upload Own Photo</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCustomCoverUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {stegoSource === 'custom' && customCoverSrc && (
-                  <div className="flex items-center space-x-3 pt-1">
-                    <img src={customCoverSrc} alt="Custom cover preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-800" />
-                    <div className="text-[11px] text-slate-500">
-                      <span className="font-semibold text-slate-700 dark:text-slate-300 block">Custom Cover Loaded</span>
-                      <span>Your encrypted file will be invisibly embedded in this image.</span>
+                    {contentType === 'video' && mediaPreviewUrl && (
+                      <video src={mediaPreviewUrl} controls className="max-h-36 rounded-lg w-full" />
+                    )}
+                    <div className="flex justify-between w-full items-center font-mono text-xs text-slate-600 dark:text-[#b9ccb2] pt-2 border-t border-slate-200 dark:border-[#3b4b37]/40">
+                      <span className="truncate max-w-[150px]">{mediaFile.name}</span>
+                      <span className="text-[#00ff41]">{(mediaFile.size / 1024).toFixed(1)} KB</span>
+                      <button onClick={removeSelectedFile} className="text-red-500 hover:underline">Remove</button>
                     </div>
                   </div>
                 )}
               </div>
             )}
+          </div>
 
-            {/* Security Mode Switcher */}
-            <div>
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                Security Mode
+          {/* Footer Info */}
+          <div className="mt-3 flex justify-between items-center text-slate-500 dark:text-[#b9ccb2] font-mono text-xs">
+            <span>
+              {contentType === 'text' ? `Chars: ${message.length} / 2048` : mediaFile ? `${(mediaFile.size / (1024*1024)).toFixed(2)} MB / 50 MB` : 'Size: 0 MB'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${message.trim() || mediaFile ? 'bg-[#00ff41] animate-pulse' : 'bg-slate-400'}`}></span>
+              <span className="text-[11px]">{message.trim() || mediaFile ? 'Ready to Transform' : 'Awaiting Input'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* COLUMN 2: Configuration Pane */}
+      <div className="col-span-1 lg:col-span-4 flex flex-col gap-4">
+        <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-5 flex flex-col h-full shadow-lg">
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-200/60 dark:border-[#3b4b37]/50 pb-3">
+            <span className="p-1.5 rounded-lg bg-[#00daf3]/15 text-[#00daf3]">
+              <Key className="h-4 w-4 stroke-[2.5]" />
+            </span>
+            <h2 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+              Transformer Config
+            </h2>
+          </div>
+
+          <div className="flex flex-col gap-4 flex-1">
+            {/* Security Mode Toggle */}
+            <div className="flex flex-col gap-1.5 font-mono text-xs">
+              <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider flex items-center justify-between">
+                <span>Security Mode</span>
+                <Info className="w-3.5 h-3.5 text-slate-400" />
               </label>
-              <div className="grid grid-cols-2 gap-3 bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+              <div className="flex bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37] rounded-xl p-1">
                 <button
                   type="button"
                   onClick={() => setMode('passphrase')}
-                  className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
                     mode === 'passphrase'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                      ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                      : 'text-slate-500 dark:text-[#b9ccb2]'
                   }`}
                 >
                   Passphrase
@@ -655,10 +434,10 @@ export const EncryptScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setMode('preshared')}
-                  className={`py-2 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
                     mode === 'preshared'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                      ? 'bg-white dark:bg-[#00daf3]/20 text-slate-900 dark:text-[#00daf3] shadow-sm'
+                      : 'text-slate-500 dark:text-[#b9ccb2]'
                   }`}
                 >
                   Pre-Shared Key
@@ -666,257 +445,210 @@ export const EncryptScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Passphrase Mode Panel */}
-            {mode === 'passphrase' && (
-              <div className="space-y-4 animate-slide-down">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                    Passphrase
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={passphrase}
-                      onChange={(e) => setPassphrase(e.target.value)}
-                      placeholder="Enter a strong passphrase..."
-                      className="w-full glass-input-3d rounded-2xl py-3 pl-11 pr-4 text-sm font-sans"
-                    />
-                    <Key className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
-                  </div>
-                  {passphrase && (
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                        <span>Passphrase Strength:</span>
-                        <span>{strengthInfo.label}</span>
-                      </div>
-                      <div className="h-1 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div className={`h-full transition-all duration-300 ${strengthInfo.color} ${strengthInfo.width}`} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                    Key Derivation Function (KDF)
-                  </label>
-                  <div className="flex items-center space-x-6">
-                    <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="kdf"
-                        value="argon2id"
-                        checked={kdfMethod === 'argon2id'}
-                        onChange={() => setKdfMethod('argon2id')}
-                        className="text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>Argon2id <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono">(Recommended)</span></span>
-                    </label>
-                    <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="kdf"
-                        value="pbkdf2"
-                        checked={kdfMethod === 'pbkdf2'}
-                        onChange={() => setKdfMethod('pbkdf2')}
-                        className="text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>PBKDF2-SHA256 <span className="text-[10px] text-slate-400 font-mono">(Fallback)</span></span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Pre-shared Key Mode Panel */}
-            {mode === 'preshared' && (
-              <div className="space-y-4 animate-slide-down">
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Pre-Shared AES Key
-                    </label>
-                    <button
-                      onClick={initPresharedKey}
-                      className="text-[10px] text-indigo-500 hover:text-indigo-600 font-medium flex items-center space-x-1"
-                      title="Generate New Key"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      <span>Regenerate</span>
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      readOnly
-                      value={presharedKey}
-                      className="w-full glass-input-3d bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl py-3 pl-4 pr-12 text-xs font-mono text-indigo-600 dark:text-indigo-400 border-dashed"
-                    />
-                    <button
-                      onClick={copyKeyToClipboard}
-                      className="absolute right-3 top-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                      title="Copy Key"
-                    >
-                      {copiedKey ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {showPresharedKeyWarning && (
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-700 dark:text-amber-300 flex items-start space-x-3">
-                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
-                    <div>
-                      <p className="font-bold mb-1">Make sure to copy this key!</p>
-                      <p>
-                        This pre-shared key is generated client-side and will not be stored.
-                        Copy it now and share it securely with the recipient.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Shared Options */}
-            <div className="border-t border-slate-200/50 dark:border-slate-800/50 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="flex items-center space-x-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/30 dark:border-slate-800/30 cursor-pointer select-none">
+            {/* Passphrase / Key Input Field */}
+            {mode === 'passphrase' ? (
+              <div className="space-y-1 font-mono text-xs">
+                <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider block">
+                  Secret Passphrase
+                </label>
                 <input
-                  type="checkbox"
-                  checked={burnAfterReading}
-                  onChange={(e) => setBurnAfterReading(e.target.checked)}
-                  className="h-4.5 w-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  type="password"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  placeholder="Enter high-entropy passphrase..."
+                  className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 text-xs sm:text-sm text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border"
                 />
-                <div className="flex items-center space-x-2">
-                  <Flame className={`h-4 w-4 ${burnAfterReading ? 'text-orange-500' : 'text-slate-400'}`} />
-                  <div>
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                      Burn After Reading
-                    </span>
-                    <span className="text-[9px] text-slate-400 block leading-tight">
-                      Alert recipient if opened multiple times
-                    </span>
-                  </div>
-                </div>
-              </label>
-
-              {carrier === 'qr' && (
-                <div className="flex flex-col justify-center">
-                  <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                    QR Error Correction
-                  </label>
-                  <div className="grid grid-cols-4 gap-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl">
-                    {(['L', 'M', 'Q', 'H'] as const).map((level) => (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => setErrorCorrection(level)}
-                        className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                          errorCorrection === level
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
-                        }`}
-                      >
-                        {level}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </Card3DTilt>
-      </div>
-
-      {/* Preview & Actions Panel with 3D Cyber Styling */}
-      <div className="lg:col-span-5">
-        <Card3DTilt>
-          <div className="glass-panel-3d rounded-3xl p-6 md:p-8 flex flex-col items-center justify-center text-center space-y-6 min-h-[420px]">
-            <div className="w-full text-left flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                  {carrier === 'qr' ? 'QR Code Preview' : 'Stego Image Preview'}
-                </h3>
-                <p className="text-[10px] text-slate-400 leading-tight">
-                  {carrier === 'qr' ? 'Updates in real-time' : 'Conceals encrypted data into image'}
-                </p>
               </div>
-              {carrier === 'stego' && (
-                <span className="text-[10px] font-mono bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 px-2 py-0.5 rounded-full font-semibold">
-                  PNG Steganography
-                </span>
-              )}
-            </div>
-
-            <div className="relative border-2 border-indigo-500/20 dark:border-indigo-400/20 rounded-3xl p-4 bg-white dark:bg-slate-900 shadow-2xl flex items-center justify-center w-full aspect-square max-w-[280px] overflow-hidden transform transition-transform duration-300 hover:scale-[1.02]">
-              <CryptoAnimationOverlay type="encrypt" isActive={isComputingKey} statusText="Deriving Argon2 Keys & Encrypting..." />
-
-              {activeResultUrl ? (
-                <img src={activeResultUrl} alt="Encrypted Output" className="w-full h-full object-contain select-none rounded-2xl shadow-md animate-fade-in" />
-              ) : (
-                <div className="text-slate-300 dark:text-slate-700 flex flex-col items-center justify-center space-y-3">
-                  {carrier === 'qr' ? (
-                    <QrCode className="h-16 w-16 stroke-[1.5]" />
-                  ) : (
-                    <ImageIcon className="h-16 w-16 stroke-[1.5]" />
-                  )}
-                  <span className="text-xs text-slate-400 max-w-[180px]">
-                    {carrier === 'qr'
-                      ? 'Enter message or choose file to generate your secure QR code.'
-                      : 'Enter message or upload video/image to generate your Stego image.'}
-                  </span>
+            ) : (
+              <div className="space-y-2 font-mono text-xs">
+                <div className="flex justify-between items-center">
+                  <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider">
+                    256-Bit Raw Hex Key
+                  </label>
+                  <button onClick={initPresharedKey} className="text-[#00daf3] hover:underline flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3" /> Gen
+                  </button>
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={presharedKey}
+                    readOnly
+                    className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-2.5 text-[11px] text-[#00daf3] truncate select-all"
+                  />
+                  <button
+                    onClick={copyKeyToClipboard}
+                    className="p-2.5 bg-slate-200 dark:bg-[#2a2a2b] rounded-xl text-slate-700 dark:text-[#e5e2e3] hover:text-[#00daf3]"
+                  >
+                    {copiedKey ? <Check className="h-4 w-4 text-[#00ff41]" /> : <Copy className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Carrier Selector (QR vs Stego) */}
+            <div className="flex flex-col gap-1.5 font-mono text-xs">
+              <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider">
+                Carrier Format
+              </label>
+              <div className="flex bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37] rounded-xl p-1">
+                <button
+                  type="button"
+                  disabled={isLargeMedia}
+                  onClick={() => setCarrier('qr')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                    carrier === 'qr'
+                      ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                      : isLargeMedia ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-500 dark:text-[#b9ccb2]'
+                  }`}
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  <span>QR Code</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCarrier('stego')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition-all ${
+                    carrier === 'stego'
+                      ? 'bg-white dark:bg-[#00ff41]/20 text-slate-900 dark:text-[#00ff41] shadow-sm'
+                      : 'text-slate-500 dark:text-[#b9ccb2]'
+                  }`}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  <span>Stego PNG</span>
+                </button>
+              </div>
             </div>
 
+            {/* KDF Setting */}
+            <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-slate-200 dark:border-[#3b4b37]/40 bg-slate-50 dark:bg-[#131314]/80 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-800 dark:text-[#e5e2e3] flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5 text-[#00daf3]" />
+                  <span>Memory-Hard KDF</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setKdfMethod(kdfMethod === 'argon2id' ? 'pbkdf2' : 'argon2id')}
+                  className="w-10 h-5 rounded-full bg-[#00ff41]/20 border border-[#00ff41]/50 relative transition-colors"
+                >
+                  <div className={`absolute top-[2px] w-3 h-3 rounded-full bg-[#00ff41] shadow-[0_0_5px_#00e639] transition-all ${kdfMethod === 'argon2id' ? 'right-1' : 'left-1 bg-slate-400'}`} />
+                </button>
+              </div>
+              <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-[#84967e]">
+                <span className="text-[#00ff41] font-semibold">{kdfMethod === 'argon2id' ? 'Argon2id WASM Active' : 'PBKDF2-HMAC Active'}</span>
+                <span>Iter: {kdfMethod === 'argon2id' ? '2 (16MB)' : '600k'}</span>
+              </div>
+            </div>
+
+            {/* Burn After Reading */}
+            <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#3b4b37]/40 bg-slate-50 dark:bg-[#131314]/80 font-mono text-xs">
+              <label className="font-bold text-slate-800 dark:text-[#e5e2e3] flex items-center gap-1.5">
+                <Flame className="h-3.5 w-3.5 text-amber-500" />
+                <span>Burn After Reading</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setBurnAfterReading(!burnAfterReading)}
+                className={`w-10 h-5 rounded-full border relative transition-colors ${burnAfterReading ? 'bg-amber-500/20 border-amber-500/50' : 'bg-slate-200 dark:bg-slate-800 border-slate-400 dark:border-slate-700'}`}
+              >
+                <div className={`absolute top-[2px] w-3 h-3 rounded-full transition-all ${burnAfterReading ? 'right-1 bg-amber-500 shadow-[0_0_5px_#f59e0b]' : 'left-1 bg-slate-400'}`} />
+              </button>
+            </div>
+
+            {/* Error Notification */}
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-xs text-red-600 dark:text-red-400 w-full flex items-start space-x-2 text-left animate-shake">
-                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2 font-mono">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            {activeResultUrl && !error && (
-              <div className="w-full grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => downloadResult('png')}
-                  className="py-3 px-4 btn-3d-primary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download PNG</span>
-                </button>
-                {carrier === 'qr' ? (
-                  <button
-                    onClick={() => downloadResult('svg')}
-                    className="py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>Download SVG</span>
-                  </button>
-                ) : (
-                  <div className="text-[10px] text-slate-400 flex items-center justify-center px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <span>Lossless PNG Format</span>
-                  </div>
-                )}
-                <button
-                  onClick={copyResultToClipboard}
-                  className="col-span-2 py-3 px-4 btn-3d-secondary rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
-                >
-                  {copiedResult ? (
-                    <>
-                      <Check className="h-4 w-4 text-green-500" />
-                      <span className="text-green-600 dark:text-green-400">Copied Image to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                      <span>Copy Image to Clipboard</span>
-                    </>
-                  )}
-                </button>
+            {/* Security Strength Gauge */}
+            <div className="mt-auto flex flex-col gap-1 font-mono text-xs pt-2">
+              <div className="flex justify-between text-[11px] text-slate-500 dark:text-[#b9ccb2]">
+                <span>Entropy Level</span>
+                <span className="text-[#00daf3] font-bold">Optimal</span>
               </div>
-            )}
+              <div className="flex gap-1 h-2">
+                <div className="flex-1 bg-[#00daf3]/80 rounded-l-full shadow-[0_0_8px_rgba(0,218,243,0.5)]"></div>
+                <div className="flex-1 bg-[#00daf3]/80 shadow-[0_0_8px_rgba(0,218,243,0.5)]"></div>
+                <div className="flex-1 bg-[#00ff41]/80 shadow-[0_0_8px_rgba(0,230,57,0.5)]"></div>
+                <div className="flex-1 bg-slate-200 dark:bg-[#131314] border border-slate-300 dark:border-[#3b4b37]/50 rounded-r-full"></div>
+              </div>
+            </div>
           </div>
-        </Card3DTilt>
+        </div>
+      </div>
+
+      {/* COLUMN 3: Live Output */}
+      <div className="col-span-1 lg:col-span-4 flex flex-col gap-4">
+        <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-xl border border-slate-200 dark:border-[#00ff41]/40 rounded-2xl p-5 flex flex-col h-full shadow-lg relative overflow-hidden group">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 border-b border-slate-200/60 dark:border-[#00ff41]/30 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-[#00ff41]/15 text-[#00ff41]">
+                <QrCode className="h-4 w-4 stroke-[2.5]" />
+              </span>
+              <h2 className="font-mono text-xs sm:text-sm font-bold text-[#00ff41] uppercase tracking-wider">
+                Encrypted Payload
+              </h2>
+            </div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#00ff41] shadow-[0_0_8px_#00e639] animate-pulse"></div>
+          </div>
+
+          {/* Glass Frame & QR / Stego Preview */}
+          <div className="flex-1 flex items-center justify-center p-4 relative min-h-[260px]">
+            {/* Targeting Reticles */}
+            <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-[#00ff41]/70"></div>
+            <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-[#00ff41]/70"></div>
+            <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-[#00ff41]/70"></div>
+            <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-[#00ff41]/70"></div>
+
+            <div className="relative w-full max-w-[240px] aspect-square p-2.5 border border-[#00ff41]/40 rounded-2xl bg-white dark:bg-[#131314] shadow-[0_0_40px_rgba(0,230,57,0.15)] group-hover:shadow-[0_0_60px_rgba(0,230,57,0.25)] transition-shadow duration-500 flex items-center justify-center overflow-hidden">
+              {/* Simulated Scanner Line */}
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#00ff41]/25 to-transparent h-4 w-full animate-laser-scan z-20 pointer-events-none"></div>
+
+              {activeResultUrl ? (
+                <img
+                  src={activeResultUrl}
+                  alt="Encrypted Output"
+                  className="w-full h-full object-contain rounded-lg relative z-10"
+                />
+              ) : (
+                <div className="text-center font-mono text-xs text-slate-400 dark:text-[#84967e] p-4">
+                  <Shield className="h-10 w-10 mx-auto text-slate-400 dark:text-[#3b4b37] mb-2 stroke-[1.5]" />
+                  <span>{isComputingKey ? 'Computing AES-GCM tag...' : 'Enter message or media above to generate payload'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-4 flex flex-col gap-2 font-mono text-xs">
+            <div className="bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-2.5 flex items-center justify-between text-slate-600 dark:text-[#b9ccb2]">
+              <span className="truncate mr-2 text-[11px]">
+                {activeResultUrl ? `qrc://enc/v1?p=${(message || mediaFile?.name || 'media').substring(0, 12)}...` : 'qrc://enc/v1?p=...'}
+              </span>
+              <button
+                onClick={copyResultToClipboard}
+                title="Copy Payload"
+                className="hover:text-[#00ff41] p-1"
+              >
+                {copiedResult ? <Check className="h-3.5 w-3.5 text-[#00ff41]" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            <button
+              onClick={() => downloadResult('png')}
+              disabled={!activeResultUrl}
+              className="w-full bg-[#00ff41] text-black font-mono text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-[#00e639] hover:shadow-[0_0_20px_rgba(0,230,57,0.4)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            >
+              <Download className="h-4 w-4 stroke-[2.5]" />
+              <span>Download {carrier === 'qr' ? 'QR Code' : 'Stego PNG'}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

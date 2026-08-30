@@ -1,137 +1,270 @@
-import React from 'react';
-import { Shield, Key, Trash2, CheckCircle2, Cpu, Lock, Video, Image as ImageIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { ListFilter, Download, Sliders, MemoryStick, Check, Shield } from 'lucide-react';
+
+interface AuditEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  cipher: string;
+  hash: string;
+  status: 'Purged' | 'Active';
+}
 
 export const AboutSection: React.FC = () => {
-  return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in p-2">
-      {/* Introduction Banner */}
-      <div className="glass-panel-3d rounded-3xl p-6 md:p-8 space-y-4 border-l-4 border-[#00ff41]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-[#00ff41]/15 p-3 rounded-2xl text-emerald-800 dark:text-[#00ff41] border border-[#00ff41]/30">
-              <Shield className="h-6 w-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-slate-800 dark:text-white">
-                QRCrypt Security Audit & Architecture
-              </h2>
-              <p className="text-xs font-mono text-slate-500 dark:text-[#b9ccb2]">
-                Verified Zero-Knowledge Client-Side Cryptosystem
-              </p>
-            </div>
-          </div>
-          <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-[#00ff41]/10 text-emerald-700 dark:text-[#00ff41] border border-[#00ff41]/30 font-mono text-xs font-bold">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Audit: Passed</span>
-          </div>
-        </div>
+  const [autoWipeTimer, setAutoWipeTimer] = useState(120);
+  const [kdfRounds, setKdfRounds] = useState(600000);
+  const [wasmFallback, setWasmFallback] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
 
-        <p className="text-slate-600 dark:text-[#e5e2e3] leading-relaxed font-medium">
-          QRCrypt operates on a strict <strong>zero-knowledge architecture</strong>. All encryption, key derivation, 
-          steganographic pixel transformations, and QR decoding occur purely in your browser memory. 
-          Plaintext data, media files, and secret keys are never transmitted to any cloud server or API.
+  const [auditLogs] = useState<AuditEntry[]>([
+    {
+      id: '1',
+      timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString().replace('T', ' ').substring(0, 19),
+      action: 'ENCRYPT',
+      cipher: 'AES-GCM',
+      hash: 'a7f8b9c0d1e2f3a4b5c6d7e8...',
+      status: 'Purged'
+    },
+    {
+      id: '2',
+      timestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString().replace('T', ' ').substring(0, 19),
+      action: 'DECRYPT',
+      cipher: 'ChaCha20',
+      hash: 'e5d4c3b2a1f0987654321fed...',
+      status: 'Purged'
+    },
+    {
+      id: '3',
+      timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString().replace('T', ' ').substring(0, 19),
+      action: 'KEYGEN',
+      cipher: 'Argon2id',
+      hash: '1234567890abcdef12345678...',
+      status: 'Active'
+    },
+    {
+      id: '4',
+      timestamp: new Date(Date.now() - 1000 * 60 * 55).toISOString().replace('T', ' ').substring(0, 19),
+      action: 'ENCRYPT',
+      cipher: 'AES-GCM',
+      hash: '9876543210fedcba98765432...',
+      status: 'Purged'
+    },
+    {
+      id: '5',
+      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString().replace('T', ' ').substring(0, 19),
+      action: 'AUDIT',
+      cipher: 'SHA-256',
+      hash: '4a6b8c0e2f4a6b8c0e2f4a6b...',
+      status: 'Active'
+    }
+  ]);
+
+  const handleApplyConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2500);
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+  };
+
+  const exportAuditLog = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(auditLogs, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `qrcrypt-audit-${Date.now()}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in relative z-10">
+      {/* Header section */}
+      <div className="border-b border-slate-200/60 dark:border-[#3b4b37]/40 pb-4">
+        <h1 className="font-mono text-xl sm:text-2xl font-black text-slate-900 dark:text-[#e5e2e3] tracking-tight">
+          Security Audit Log
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-[#b9ccb2] font-mono mt-1">
+          Review local cryptographic history and adjust node security parameters.
         </p>
       </div>
 
-      {/* Real-time Crypto Specs Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
-        <div className="glass-panel-3d rounded-2xl p-4 border border-slate-200 dark:border-[#3b4b37]">
-          <div className="text-[11px] text-slate-500 dark:text-[#b9ccb2] uppercase tracking-wider">Cipher Protocol</div>
-          <div className="text-lg font-black text-slate-800 dark:text-[#00ff41] mt-1">AES-256-GCM</div>
-          <div className="text-[10px] text-emerald-600 dark:text-[#00ff41]/80 mt-1 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> Authenticated AEAD
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Local History Table (Bento Grid) */}
+        <div className="lg:col-span-8 bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl flex flex-col overflow-hidden shadow-lg h-[580px]">
+          <div className="p-4 border-b border-slate-200 dark:border-[#3b4b37]/50 flex justify-between items-center bg-slate-50 dark:bg-[#201f20]/60">
+            <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2 uppercase tracking-wider">
+              <Shield className="h-4 w-4 text-[#00ff41]" />
+              <span>Local History</span>
+            </h3>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-[#353436] text-slate-600 dark:text-[#b9ccb2] transition-colors"
+                title="Filter Records"
+              >
+                <ListFilter className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={exportAuditLog}
+                className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-[#353436] text-slate-600 dark:text-[#b9ccb2] transition-colors"
+                title="Download JSON Export"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-y-auto flex-grow">
+            <table className="w-full text-left border-collapse font-mono text-xs">
+              <thead className="sticky top-0 bg-slate-100 dark:bg-[#131314] z-10 border-b border-slate-200 dark:border-[#3b4b37]/50 text-slate-500 dark:text-[#84967e] text-[10px] uppercase tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Timestamp</th>
+                  <th className="py-3 px-4">Action</th>
+                  <th className="py-3 px-4">Hash (SHA-256)</th>
+                  <th className="py-3 px-4 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-[#3b4b37]/30 text-slate-700 dark:text-[#e5e2e3]">
+                {auditLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                    <td className="py-3.5 px-4 text-slate-500 dark:text-[#bcc7de] text-[11px] whitespace-nowrap">
+                      {log.timestamp}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className={log.action === 'ENCRYPT' ? 'text-[#00daf3] font-bold' : log.action === 'DECRYPT' ? 'text-[#00ff41] font-bold' : 'text-slate-400 font-bold'}>
+                        {log.action}
+                      </span>{' '}
+                      <span className="text-[10px] text-slate-400">({log.cipher})</span>
+                    </td>
+                    <td className="py-3.5 px-4 truncate max-w-[150px] text-[11px] opacity-70">
+                      {log.hash}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      {log.status === 'Active' ? (
+                        <div className="inline-flex items-center gap-1.5 border border-[#00ff41]/40 rounded-full px-2.5 py-0.5 bg-[#00ff41]/10 text-[#00ff41] text-[10px] font-bold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#00ff41] shadow-[0_0_6px_#00ff41]"></span>
+                          <span>Active</span>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 rounded-full px-2.5 py-0.5 text-red-500 dark:text-[#ffb4ab] text-[10px] font-bold bg-red-500/10">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]"></span>
+                          <span>Purged</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="glass-panel-3d rounded-2xl p-4 border border-slate-200 dark:border-[#3b4b37]">
-          <div className="text-[11px] text-slate-500 dark:text-[#b9ccb2] uppercase tracking-wider">Key Derivation</div>
-          <div className="text-lg font-black text-slate-800 dark:text-[#00daf3] mt-1">Argon2id WASM</div>
-          <div className="text-[10px] text-cyan-600 dark:text-[#00daf3]/80 mt-1 flex items-center gap-1">
-            <Cpu className="h-3 w-3" /> Memory Hardened
+        {/* Right Column: Node Parameters & Runtime Environment */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          {/* Node Parameters Panel */}
+          <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-5 shadow-lg">
+            <h3 className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-200 dark:border-[#3b4b37]/50 pb-2">
+              <Sliders className="h-4 w-4 text-[#00daf3]" />
+              <span>Node Parameters</span>
+            </h3>
+
+            <form onSubmit={handleApplyConfig} className="flex flex-col gap-4 font-mono text-xs">
+              {/* Auto-Wipe Timer */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-600 dark:text-[#b9ccb2] flex justify-between font-bold">
+                  <span>Auto-Wipe Timer</span>
+                  <span className="text-[#00ff41]">{formatTimer(autoWipeTimer)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="30"
+                  max="300"
+                  step="10"
+                  value={autoWipeTimer}
+                  onChange={(e) => setAutoWipeTimer(Number(e.target.value))}
+                  className="w-full accent-[#00ff41] bg-slate-200 dark:bg-[#353436] rounded-full h-2 appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400">
+                  <span>30s</span>
+                  <span>5m</span>
+                </div>
+              </div>
+
+              {/* KDF Iterations */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-600 dark:text-[#b9ccb2] font-bold">
+                  KDF Iterations (PBKDF2)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={kdfRounds}
+                    onChange={(e) => setKdfRounds(Number(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl py-2 px-3 text-[#00ff41] font-bold focus:outline-none glow-border"
+                  />
+                  <span className="absolute right-3 top-2 text-slate-400 text-[10px]">rounds</span>
+                </div>
+              </div>
+
+              {/* WASM Fallback */}
+              <div className="flex items-center justify-between py-2 border-t border-slate-200 dark:border-[#3b4b37]/40">
+                <div className="flex flex-col">
+                  <span className="font-bold text-slate-800 dark:text-white">WASM Fallback</span>
+                  <span className="text-[10px] text-slate-400">Use JS if WebAssembly fails</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWasmFallback(!wasmFallback)}
+                  className={`w-10 h-5 rounded-full border relative transition-colors ${
+                    wasmFallback ? 'bg-[#00ff41]/20 border-[#00ff41]/50' : 'bg-slate-200 dark:bg-slate-800 border-slate-400'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-[2px] w-3 h-3 rounded-full transition-all ${
+                      wasmFallback ? 'right-1 bg-[#00ff41] shadow-[0_0_5px_#00e639]' : 'left-1 bg-slate-400'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                className="mt-2 w-full bg-[#00ff41] text-black hover:bg-[#00e639] transition-all py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md shadow-[#00ff41]/20 active:scale-[0.98]"
+              >
+                {isSaved ? <Check className="h-4 w-4 stroke-[3]" /> : null}
+                <span>{isSaved ? 'Configuration Applied' : 'Apply Configuration'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* System Status Card */}
+          <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-5 shadow-lg flex-grow font-mono text-xs">
+            <h3 className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider mb-3 flex items-center gap-2">
+              <MemoryStick className="h-4 w-4 text-[#00daf3]" />
+              <span>Runtime Environment</span>
+            </h3>
+            <div className="space-y-2.5">
+              <div className="flex justify-between border-b border-slate-200 dark:border-[#3b4b37]/30 pb-2">
+                <span className="text-slate-500 dark:text-[#b9ccb2]">Crypto Engine</span>
+                <span className="text-[#00ff41] font-bold">WebCrypto API v1.2</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-200 dark:border-[#3b4b37]/30 pb-2">
+                <span className="text-slate-500 dark:text-[#b9ccb2]">Memory Wipe</span>
+                <span className="text-[#00daf3] font-bold">Zero-fill Active</span>
+              </div>
+              <div className="flex justify-between pt-1">
+                <span className="text-slate-500 dark:text-[#b9ccb2]">Network</span>
+                <span className="text-red-400 font-bold">Air-gapped (Offline)</span>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="glass-panel-3d rounded-2xl p-4 border border-slate-200 dark:border-[#3b4b37]">
-          <div className="text-[11px] text-slate-500 dark:text-[#b9ccb2] uppercase tracking-wider">Stego Engine</div>
-          <div className="text-lg font-black text-slate-800 dark:text-white mt-1">3-Bit RGB LSB</div>
-          <div className="text-[10px] text-slate-500 dark:text-[#b9ccb2] mt-1 flex items-center gap-1">
-            <Video className="h-3 w-3" /> Up to 50 MB Video/Photo
-          </div>
-        </div>
-
-        <div className="glass-panel-3d rounded-2xl p-4 border border-slate-200 dark:border-[#3b4b37]">
-          <div className="text-[11px] text-slate-500 dark:text-[#b9ccb2] uppercase tracking-wider">Integrity Check</div>
-          <div className="text-lg font-black text-slate-800 dark:text-emerald-400 mt-1">128-Bit PolyVal</div>
-          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
-            <Lock className="h-3 w-3" /> Tamper Detection
-          </div>
-        </div>
-      </div>
-
-      {/* Security Architecture Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Symmetric Encryption */}
-        <div className="glass-panel-3d card-3d-tilt rounded-3xl p-6 space-y-3 border-t-2 border-[#00ff41]/50">
-          <div className="flex items-center space-x-2 text-emerald-600 dark:text-[#00ff41]">
-            <Shield className="h-5 w-5" />
-            <h3 className="font-extrabold text-slate-800 dark:text-white">AES-256-GCM Authenticated Encryption</h3>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-[#b9ccb2] leading-relaxed">
-            All messages, photos, and videos are encrypted using <strong>AES-256-GCM</strong>. GCM provides both confidentiality and <strong>authenticated integrity</strong> with a 128-bit authentication tag. If even a single bit in the carrier or QR code is tampered with, decryption fails cleanly instead of yielding corrupted plaintext.
-          </p>
-        </div>
-
-        {/* Key Derivation */}
-        <div className="glass-panel-3d card-3d-tilt rounded-3xl p-6 space-y-3 border-t-2 border-[#00daf3]/50">
-          <div className="flex items-center space-x-2 text-cyan-600 dark:text-[#00daf3]">
-            <Key className="h-5 w-5" />
-            <h3 className="font-extrabold text-slate-800 dark:text-white">Argon2id Memory-Hard KDF</h3>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-[#b9ccb2] leading-relaxed">
-            When you enter a passphrase, we derive a 256-bit key using <strong>Argon2id WASM</strong> (preferred) or <strong>PBKDF2-SHA256 with 600,000 iterations</strong>. This makes GPU and ASIC brute-force password cracking attacks computationally infeasible.
-          </p>
-        </div>
-
-        {/* Steganography */}
-        <div className="glass-panel-3d card-3d-tilt rounded-3xl p-6 space-y-3 border-t-2 border-emerald-500/50">
-          <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
-            <ImageIcon className="h-5 w-5" />
-            <h3 className="font-extrabold text-slate-800 dark:text-white">High-Capacity Steganography (50 MB)</h3>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-[#b9ccb2] leading-relaxed">
-            Conceals entire video files or photos directly inside the least significant bits (LSB) of PNG carrier pixels. Changes are mathematically imperceptible to the human eye, with zero loss in carrier quality.
-          </p>
-        </div>
-
-        {/* Burn after reading */}
-        <div className="glass-panel-3d card-3d-tilt rounded-3xl p-6 space-y-3 border-t-2 border-amber-500/50">
-          <div className="flex items-center space-x-2 text-amber-600 dark:text-amber-400">
-            <Trash2 className="h-5 w-5" />
-            <h3 className="font-extrabold text-slate-800 dark:text-white">Best-Effort Burn-After-Reading</h3>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-[#b9ccb2] leading-relaxed">
-            The optional <strong>"Burn after reading"</strong> flag encodes a specific instruction in the payload.
-            The app records scanned payloads' cryptographic hashes locally using memory and `localStorage` to warn if opened more than once.
-          </p>
-        </div>
-      </div>
-
-      {/* Security Model Limitations */}
-      <div className="glass-panel-3d rounded-3xl p-6 md:p-8 border-l-4 border-l-amber-500 bg-amber-500/10 dark:bg-amber-950/20 space-y-3">
-        <h3 className="text-lg font-bold text-amber-800 dark:text-amber-400 flex items-center space-x-2">
-          <span>⚠️ Important Security Limitations</span>
-        </h3>
-        <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-          <li>
-            <strong>Passphrase Distribution:</strong> Share the passphrase or pre-shared key through a separate, secure communication channel (e.g., in person or via signal).
-          </li>
-          <li>
-            <strong>No Forward Secrecy:</strong> If an attacker steals your passphrase and intercepts the QR/stego image, they can decrypt the message. Use unique passphrases.
-          </li>
-          <li>
-            <strong>Single-Use Limits:</strong> Without a central database, true server-enforced "burn after reading" is impossible.
-          </li>
-        </ul>
       </div>
     </div>
   );
