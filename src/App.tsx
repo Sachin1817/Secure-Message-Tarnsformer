@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTheme } from './hooks/useTheme';
-import { Header } from './components/Header';
+import { Header, type ActiveTab } from './components/Header';
+import { DashboardView } from './components/DashboardView';
 import { EncryptScreen } from './components/EncryptScreen';
 import { DecryptScreen } from './components/DecryptScreen';
 import { AboutSection } from './components/AboutSection';
@@ -11,7 +12,7 @@ import { LockScreen } from './components/LockScreen';
 import { Lock, KeyRound, Sparkles, ShieldCheck } from 'lucide-react';
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState<'encrypt' | 'decrypt' | 'about'>('encrypt');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const { theme, toggleTheme } = useTheme();
   const { user, loading, isAuthModalOpen, openAuthModal, closeAuthModal } = useAuth();
 
@@ -69,6 +70,7 @@ function MainApp() {
 
           {/* Main dashboard content area */}
           <main className="flex-grow max-w-6xl w-full mx-auto px-4 py-8 md:px-8 z-10">
+            {activeTab === 'dashboard' && <DashboardView onNavigate={setActiveTab} />}
             {activeTab === 'encrypt' && <EncryptScreen />}
             {activeTab === 'decrypt' && <DecryptScreen />}
             {activeTab === 'about' && <AboutSection />}

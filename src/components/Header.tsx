@@ -1,10 +1,12 @@
 import React from 'react';
-import { QrCode, ScanLine, Sun, Moon, HelpCircle, Shield, LogIn, LogOut, User as UserIcon, Lock } from 'lucide-react';
+import { LayoutDashboard, QrCode, ScanLine, Sun, Moon, HelpCircle, Shield, LogIn, LogOut, User as UserIcon, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+export type ActiveTab = 'dashboard' | 'encrypt' | 'decrypt' | 'about';
+
 interface HeaderProps {
-  activeTab: 'encrypt' | 'decrypt' | 'about';
-  setActiveTab: (tab: 'encrypt' | 'decrypt' | 'about') => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 }
@@ -23,7 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand logo with Stitch Cyber Emblem */}
         <div 
           className="flex items-center space-x-3 cursor-pointer group" 
-          onClick={() => setActiveTab('encrypt')}
+          onClick={() => setActiveTab('dashboard')}
         >
           <div className="relative p-2.5 rounded-2xl bg-gradient-to-br from-[#00ff41] to-[#00aa28] text-black shadow-lg shadow-[#00ff41]/20 border-t border-white/40 transform transition-transform duration-300 group-hover:scale-105 group-hover:rotate-1">
             <Shield className="h-6 w-6 text-black stroke-[2.5]" />
@@ -58,31 +60,44 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* 3D Navigation tabs */}
-        <nav className="flex items-center space-x-1.5 bg-slate-200/60 dark:bg-[#1c1b1c] p-1.5 rounded-2xl border border-slate-300/40 dark:border-[#3b4b37]/60 shadow-inner">
+        <nav className="flex items-center space-x-1 bg-slate-200/60 dark:bg-[#1c1b1c] p-1.5 rounded-2xl border border-slate-300/40 dark:border-[#3b4b37]/60 shadow-inner">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${
+              activeTab === 'dashboard'
+                ? 'bg-white dark:bg-[#00ff41]/15 text-emerald-800 dark:text-[#00ff41] dark:border-b-2 dark:border-[#00ff41] shadow-md'
+                : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+            }`}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
+            <span className="sm:hidden">Dash</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('encrypt')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${
               activeTab === 'encrypt'
                 ? 'bg-white dark:bg-[#00ff41]/15 text-emerald-800 dark:text-[#00ff41] dark:border-b-2 dark:border-[#00ff41] shadow-md'
                 : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
             }`}
           >
             <QrCode className="h-4 w-4" />
-            <span className="hidden sm:inline">Encrypt & Generate</span>
-            <span className="sm:hidden">Encrypt</span>
+            <span className="hidden sm:inline">Encrypt</span>
+            <span className="sm:hidden">Enc</span>
           </button>
 
           <button
             onClick={() => setActiveTab('decrypt')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${
               activeTab === 'decrypt'
                 ? 'bg-white dark:bg-[#00daf3]/15 text-cyan-800 dark:text-[#00daf3] dark:border-b-2 dark:border-[#00daf3] shadow-md'
                 : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
             }`}
           >
             <ScanLine className="h-4 w-4" />
-            <span className="hidden sm:inline">Decrypt & Scan</span>
-            <span className="sm:hidden">Decrypt</span>
+            <span className="hidden sm:inline">Decrypt</span>
+            <span className="sm:hidden">Dec</span>
           </button>
 
           <button
