@@ -68,37 +68,88 @@ function MainApp() {
             toggleTheme={toggleTheme}
           />
 
-          {/* Main dashboard content area */}
-          <main className="flex-grow max-w-6xl w-full mx-auto px-4 py-8 md:px-8 z-10">
+          {/* Main dashboard content area with mobile top/bottom bar offsets */}
+          <main className="flex-grow max-w-7xl w-full mx-auto px-4 pt-20 pb-24 md:pt-8 md:pb-8 z-10">
             {activeTab === 'dashboard' && <DashboardView onNavigate={setActiveTab} />}
             {activeTab === 'encrypt' && <EncryptScreen />}
             {activeTab === 'decrypt' && <DecryptScreen />}
             {activeTab === 'about' && <AboutSection />}
           </main>
 
+          {/* SHARED COMPONENT: BottomNavBar (Mobile exact Stitch layout) */}
+          <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 px-2 bg-[#131314]/95 backdrop-blur-2xl rounded-t-2xl border-t border-[#3b4b37]/60 shadow-[0_-4px_20px_rgba(0,0,0,0.8)]">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+                activeTab === 'dashboard'
+                  ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
+                  : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
+              }`}
+            >
+              <LayoutDashboard className="h-5 w-5 mb-0.5" />
+              <span>Dash</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('encrypt')}
+              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+                activeTab === 'encrypt'
+                  ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
+                  : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
+              }`}
+            >
+              <Lock className="h-5 w-5 mb-0.5" />
+              <span>Encrypt</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('decrypt')}
+              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+                activeTab === 'decrypt'
+                  ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
+                  : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
+              }`}
+            >
+              <QrCode className="h-5 w-5 mb-0.5" />
+              <span>Decrypt</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('about')}
+              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+                activeTab === 'about'
+                  ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
+                  : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
+              }`}
+            >
+              <ShieldCheck className="h-5 w-5 mb-0.5" />
+              <span>Audit</span>
+            </button>
+          </nav>
+
           {/* Auth Modal Overlay */}
           <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
 
-          {/* Modern 3D Cyber Footer */}
-          <footer className="w-full border-t border-slate-200/60 dark:border-slate-800/60 py-6 px-4 md:px-8 bg-white/40 dark:bg-slate-950/60 backdrop-blur-xl transition-colors duration-300 z-10">
-            <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
-              <div className="flex items-center space-x-2 text-xs font-medium text-slate-600 dark:text-slate-400">
-                <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+          {/* Modern Cyber Footer (Hidden on mobile to prioritize BottomNavBar) */}
+          <footer className="hidden md:block w-full border-t border-slate-200/60 dark:border-[#3b4b37]/40 py-6 px-4 md:px-8 bg-white/40 dark:bg-[#131314]/80 backdrop-blur-xl transition-colors duration-300 z-10 font-mono text-xs">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+              <div className="flex items-center space-x-2 text-slate-600 dark:text-[#b9ccb2]">
+                <div className="p-1.5 rounded-lg bg-[#00ff41]/10 text-[#00ff41]">
                   <Lock className="h-4 w-4" />
                 </div>
                 <span>
-                  All operations are executed <strong>100% locally</strong> in your browser via Web Crypto & Canvas LSB.
+                  All operations are executed <strong>100% locally</strong> in your browser via WebCrypto & Canvas LSB.
                 </span>
               </div>
 
-              <div className="flex items-center space-x-3 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                <span className="flex items-center space-x-1.5 bg-slate-200/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-full border border-slate-300/40 dark:border-slate-800/60">
-                  <KeyRound className="h-3 w-3 text-violet-500" />
+              <div className="flex items-center space-x-3 text-[11px] text-slate-500 dark:text-[#84967e]">
+                <span className="flex items-center space-x-1.5 bg-slate-200/50 dark:bg-[#1c1b1c] px-2.5 py-1 rounded-full border border-slate-300/40 dark:border-[#3b4b37]">
+                  <KeyRound className="h-3 w-3 text-[#00daf3]" />
                   <span>AES-256-GCM</span>
                 </span>
-                <span className="text-slate-400">•</span>
-                <span className="flex items-center space-x-1 bg-slate-200/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-full border border-slate-300/40 dark:border-slate-800/60">
-                  <Sparkles className="h-3 w-3 text-indigo-400" />
+                <span>•</span>
+                <span className="flex items-center space-x-1 bg-slate-200/50 dark:bg-[#1c1b1c] px-2.5 py-1 rounded-full border border-slate-300/40 dark:border-[#3b4b37]">
+                  <Sparkles className="h-3 w-3 text-[#00ff41]" />
                   <span>Argon2id WASM</span>
                 </span>
               </div>
@@ -110,7 +161,7 @@ function MainApp() {
   );
 }
 
-function App() {
+export function App() {
   return (
     <AuthProvider>
       <MainApp />

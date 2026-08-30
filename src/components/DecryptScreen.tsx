@@ -299,20 +299,15 @@ export const DecryptScreen: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto animate-fade-in relative z-10 space-y-6">
-      {/* Header section */}
-      <div className="flex justify-between items-center border-b border-slate-200/60 dark:border-[#3b4b37]/40 pb-4">
-        <div className="flex items-center gap-2">
-          <span className="p-2 rounded-xl bg-[#00daf3]/15 text-[#00daf3]">
-            <Scan className="h-5 w-5 stroke-[2.5]" />
-          </span>
-          <div>
-            <h2 className="font-mono text-sm sm:text-base font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              Decrypt & Extract
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-[#b9ccb2]">
-              Scan QR code or upload high-capacity Stego carrier PNG (up to 50MB)
-            </p>
-          </div>
+      {/* Header section matching exact mobile stitch screenshot */}
+      <div className="flex justify-between items-start md:items-center border-b border-slate-200/60 dark:border-[#3b4b37]/40 pb-4">
+        <div>
+          <h1 className="font-sans text-2xl sm:text-3xl font-black text-[#00ff41] tracking-tight">
+            Scanner Operations
+          </h1>
+          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-[#b9ccb2] font-mono uppercase tracking-widest mt-1">
+            {rawPayload ? 'ENCRYPTED PAYLOAD DETECTED' : 'AWAITING ENCRYPTED PAYLOAD...'}
+          </p>
         </div>
 
         {rawPayload && (
@@ -330,9 +325,9 @@ export const DecryptScreen: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Input Source (Camera or Dropzone) */}
         <div className={`${rawPayload ? 'lg:col-span-5' : 'lg:col-span-12'} transition-all duration-300`}>
-          <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-6 shadow-lg relative overflow-hidden">
+          <div className="bg-white/70 dark:bg-[#1c1b1c]/80 backdrop-blur-lg border border-slate-200 dark:border-[#3b4b37] rounded-2xl p-4 sm:p-6 shadow-lg relative overflow-hidden">
             {!rawPayload ? (
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
                 {/* Live Camera Scanner Box */}
                 {isScanning ? (
                   <div className="relative rounded-2xl overflow-hidden border border-[#00daf3]/50 aspect-video bg-black max-w-[500px] mx-auto shadow-2xl">
@@ -344,16 +339,24 @@ export const DecryptScreen: React.FC = () => {
                         <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-[#00ff41]" />
                         <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-[#00ff41]" />
                         <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-[#00ff41]" />
+                        <div className="scanner-line"></div>
                         <span className="text-[10px] text-white font-mono bg-black/80 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border border-[#00daf3]/40">
                           ALIGN QR / STEGO
                         </span>
                       </div>
                     </div>
+
+                    {/* CAM_ACTV_01 pill */}
+                    <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 bg-[#131314]/90 px-3 py-1 rounded-full border border-[#3b4b37]/70 font-mono text-[10px] text-[#00ff41]">
+                      <span className="w-2 h-2 rounded-full bg-[#00ff41] animate-pulse"></span>
+                      <span>CAM_ACTV_01</span>
+                    </div>
+
                     <button
                       onClick={stopCamera}
-                      className="absolute bottom-4 left-1/2 -translate-x-1/2 py-1.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-mono font-bold shadow-lg transition-all"
+                      className="absolute bottom-3 right-3 py-1 px-3 bg-red-600/80 hover:bg-red-600 text-white rounded-full text-[10px] font-mono font-bold shadow-lg transition-all"
                     >
-                      Cancel Scan
+                      Cancel
                     </button>
                   </div>
                 ) : (
@@ -373,34 +376,27 @@ export const DecryptScreen: React.FC = () => {
                   </div>
                 )}
 
-                {/* Separator */}
-                <div className="relative flex py-1 items-center">
-                  <div className="flex-grow border-t border-slate-200 dark:border-[#3b4b37]/50"></div>
-                  <span className="flex-shrink mx-4 text-slate-400 dark:text-[#84967e] text-xs font-mono font-bold">OR</span>
-                  <div className="flex-grow border-t border-slate-200 dark:border-[#3b4b37]/50"></div>
-                </div>
-
                 {/* File Dropzone */}
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-all ${
+                  className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center transition-all ${
                     isDragging
                       ? 'border-[#00daf3] bg-[#00daf3]/10'
                       : 'border-slate-200 dark:border-[#3b4b37] hover:border-[#00daf3] bg-slate-50/50 dark:bg-[#131314]/50'
                   }`}
                 >
-                  <div className="p-3.5 rounded-2xl bg-[#00daf3]/15 text-[#00daf3] mb-3">
-                    <Upload className="h-7 w-7" />
+                  <div className="p-3 rounded-2xl bg-[#00daf3]/15 text-[#00daf3] mb-2">
+                    <Upload className="h-6 w-6" />
                   </div>
-                  <p className="text-sm font-bold text-slate-800 dark:text-white font-mono mb-1">
-                    Drag and drop your QR Code or Stego PNG Image
+                  <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-white font-mono mb-0.5">
+                    Drag & Drop QR Image
                   </p>
-                  <p className="text-xs font-mono text-slate-400 dark:text-[#84967e] mb-4 max-w-[340px]">
-                    Supports QR scans and high-capacity Stego PNG carriers containing messages, photos, or videos up to 50MB.
+                  <p className="text-[11px] font-mono text-slate-400 dark:text-[#84967e] mb-3">
+                    or click to browse local files
                   </p>
-                  <label className="py-2 px-4 bg-slate-200 dark:bg-[#2a2a2b] hover:bg-slate-300 dark:hover:bg-[#353436] rounded-xl text-xs font-mono font-bold cursor-pointer inline-flex items-center gap-2 text-slate-800 dark:text-[#e5e2e3] transition-all">
+                  <label className="py-1.5 px-4 bg-slate-200 dark:bg-[#2a2a2b] hover:bg-slate-300 dark:hover:bg-[#353436] rounded-xl text-xs font-mono font-bold cursor-pointer inline-flex items-center gap-2 text-slate-800 dark:text-[#e5e2e3] transition-all">
                     <span>Browse Files</span>
                     <input
                       type="file"
@@ -412,42 +408,25 @@ export const DecryptScreen: React.FC = () => {
                 </div>
               </div>
             ) : (
-              /* Payload Detected Preview */
+              /* DECRYPTION REQUIRED card (Stitch exact layout) */
               <div className="space-y-4 font-mono text-xs">
-                <div className="p-3.5 rounded-xl bg-[#00ff41]/10 border border-[#00ff41]/30 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-[#00ff41] uppercase tracking-wider block">
-                      Payload Detected
-                    </span>
-                    <span className="text-slate-700 dark:text-[#e5e2e3]">
-                      Mode: {payloadMetadata?.isPassphraseMode ? 'Passphrase Protected' : 'Pre-Shared Key Protected'}
-                    </span>
-                  </div>
-                  {payloadMetadata?.isBurnAfterReading && (
-                    <span className="bg-amber-500/20 text-amber-500 text-[10px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 border border-amber-500/30">
-                      <Flame className="h-3 w-3" />
-                      <span>Burn</span>
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 text-[#00daf3]">
+                  <Lock className="h-5 w-5 stroke-[2.5]" />
+                  <h2 className="text-sm font-bold uppercase tracking-wider">
+                    Decryption Required
+                  </h2>
                 </div>
-
-                {showBurnWarning && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                    <span>Warning: This single-use payload was already read previously.</span>
-                  </div>
-                )}
+                <p className="text-slate-500 dark:text-[#b9ccb2] text-xs">
+                  Encrypted payload detected. Enter passphrase to initialize decryption sequence.
+                </p>
 
                 <div className="space-y-1.5">
-                  <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider block">
-                    {payloadMetadata?.isPassphraseMode ? 'Passphrase' : '256-Bit Raw Hex Key'}
-                  </label>
                   <input
                     type="password"
                     value={secretInput}
                     onChange={(e) => setSecretInput(e.target.value)}
-                    placeholder={payloadMetadata?.isPassphraseMode ? 'Enter decryption passphrase...' : 'Enter 64-character hex key...'}
-                    className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border"
+                    placeholder="Enter passphrase..."
+                    className="w-full bg-slate-50 dark:bg-[#0e0e0f] border border-slate-200 dark:border-[#3b4b37]/60 rounded-xl p-3 text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border font-mono"
                   />
                 </div>
 
@@ -461,10 +440,10 @@ export const DecryptScreen: React.FC = () => {
                 <button
                   onClick={handleDecrypt}
                   disabled={isDecrypting || !secretInput}
-                  className="w-full py-3 bg-[#00ff41] text-black font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-[#00e639] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-[#00ff41]/20"
+                  className="w-full py-3 border border-[#00daf3] text-[#00daf3] hover:bg-[#00daf3] hover:text-black font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all duration-200 uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                 >
                   <Key className="h-4 w-4 stroke-[2.5]" />
-                  <span>{isDecrypting ? 'Decrypting...' : 'Decrypt Payload'}</span>
+                  <span>{isDecrypting ? 'Decrypting...' : 'Initialize Decryption'}</span>
                 </button>
               </div>
             )}
