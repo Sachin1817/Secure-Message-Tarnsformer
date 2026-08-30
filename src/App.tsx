@@ -4,7 +4,6 @@ import { Header, type ActiveTab } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { EncryptScreen } from './components/EncryptScreen';
 import { DecryptScreen } from './components/DecryptScreen';
-import { AboutSection } from './components/AboutSection';
 import { CyberBackground3D } from './components/CyberBackground3D';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
@@ -73,14 +72,13 @@ function MainApp() {
             {activeTab === 'dashboard' && <DashboardView onNavigate={setActiveTab} />}
             {activeTab === 'encrypt' && <EncryptScreen />}
             {activeTab === 'decrypt' && <DecryptScreen />}
-            {activeTab === 'about' && <AboutSection />}
           </main>
 
-          {/* SHARED COMPONENT: BottomNavBar (Mobile exact Stitch layout) */}
-          <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 px-2 bg-[#131314]/95 backdrop-blur-2xl rounded-t-2xl border-t border-[#3b4b37]/60 shadow-[0_-4px_20px_rgba(0,0,0,0.8)]">
+          {/* SHARED COMPONENT: BottomNavBar (Mobile 3-tab layout) */}
+          <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 px-4 bg-[#131314]/95 backdrop-blur-2xl rounded-t-2xl border-t border-[#3b4b37]/60 shadow-[0_-4px_20px_rgba(0,0,0,0.8)]">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+              className={`flex flex-col items-center justify-center w-20 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
                 activeTab === 'dashboard'
                   ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
                   : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
@@ -92,7 +90,7 @@ function MainApp() {
 
             <button
               onClick={() => setActiveTab('encrypt')}
-              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+              className={`flex flex-col items-center justify-center w-20 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
                 activeTab === 'encrypt'
                   ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
                   : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
@@ -104,7 +102,7 @@ function MainApp() {
 
             <button
               onClick={() => setActiveTab('decrypt')}
-              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
+              className={`flex flex-col items-center justify-center w-20 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
                 activeTab === 'decrypt'
                   ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
                   : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
@@ -112,18 +110,6 @@ function MainApp() {
             >
               <QrCode className="h-5 w-5 mb-0.5" />
               <span>Decrypt</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('about')}
-              className={`flex flex-col items-center justify-center w-16 py-1 transition-transform active:scale-90 font-mono text-[10px] font-bold ${
-                activeTab === 'about'
-                  ? 'text-[#00ff41] bg-[#00ff41]/15 rounded-xl'
-                  : 'text-slate-400 dark:text-[#b9ccb2] hover:text-[#00ff41]'
-              }`}
-            >
-              <ShieldCheck className="h-5 w-5 mb-0.5" />
-              <span>Audit</span>
             </button>
           </nav>
 

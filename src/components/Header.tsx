@@ -1,8 +1,8 @@
 import React from 'react';
-import { LayoutDashboard, QrCode, ScanLine, Sun, Moon, Shield, LogIn, LogOut, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, QrCode, ScanLine, Sun, Moon, Shield, LogIn, LogOut, Lock, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export type ActiveTab = 'dashboard' | 'encrypt' | 'decrypt' | 'about';
+export type ActiveTab = 'dashboard' | 'encrypt' | 'decrypt';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -40,14 +40,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-3 text-[#b9ccb2]">
-          <button
-            onClick={() => setActiveTab('about')}
-            className={`p-2 rounded-full hover:bg-white/10 transition-colors ${activeTab === 'about' ? 'text-[#00ff41]' : 'hover:text-[#00ff41]'}`}
-            title="Security Audit"
-          >
-            <ShieldCheck className="h-5 w-5" />
-          </button>
-
           <button
             onClick={handleRefresh}
             className="p-2 rounded-full hover:bg-white/10 hover:text-[#00ff41] transition-colors active:scale-95"
@@ -128,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
           <nav className="flex items-center space-x-1 bg-slate-200/60 dark:bg-[#1c1b1c] p-1.5 rounded-2xl border border-slate-300/40 dark:border-[#3b4b37]/60 shadow-inner font-mono text-xs">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl font-bold transition-all duration-200 ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-bold transition-all duration-200 ${
                 activeTab === 'dashboard'
                   ? 'bg-white dark:bg-[#00ff41]/15 text-emerald-800 dark:text-[#00ff41] dark:border-b-2 dark:border-[#00ff41] shadow-md'
                   : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
@@ -140,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('encrypt')}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl font-bold transition-all duration-200 ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-bold transition-all duration-200 ${
                 activeTab === 'encrypt'
                   ? 'bg-white dark:bg-[#00ff41]/15 text-emerald-800 dark:text-[#00ff41] dark:border-b-2 dark:border-[#00ff41] shadow-md'
                   : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
@@ -152,7 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('decrypt')}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl font-bold transition-all duration-200 ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-bold transition-all duration-200 ${
                 activeTab === 'decrypt'
                   ? 'bg-white dark:bg-[#00daf3]/15 text-cyan-800 dark:text-[#00daf3] dark:border-b-2 dark:border-[#00daf3] shadow-md'
                   : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
@@ -160,18 +152,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <ScanLine className="h-4 w-4" />
               <span>Decrypt</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('about')}
-              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl font-bold transition-all duration-200 ${
-                activeTab === 'about'
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md'
-                  : 'text-slate-600 dark:text-[#b9ccb2] hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="h-4 w-4" />
-              <span>Audit</span>
             </button>
           </nav>
 

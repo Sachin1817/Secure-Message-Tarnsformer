@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ShieldCheck, QrCode, ScanLine, Lock, ArrowRight, HardDrive, Cpu, KeyRound, CheckCircle2 } from 'lucide-react';
 
 interface DashboardViewProps {
-  onNavigate: (tab: 'encrypt' | 'decrypt' | 'about') => void;
+  onNavigate: (tab: 'encrypt' | 'decrypt') => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
@@ -206,12 +206,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             <Cpu className="h-4 w-4 text-[#00ff41]" />
             <span>Active Cryptosystem Specs</span>
           </h3>
-          <button
-            onClick={() => onNavigate('about')}
-            className="font-mono text-[11px] font-bold text-[#00daf3] hover:underline"
-          >
-            VIEW FULL AUDIT & SPECS
-          </button>
+          <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#00daf3] bg-[#00daf3]/10 px-2.5 py-1 rounded-full border border-[#00daf3]/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00daf3] animate-pulse"></span>
+            <span>ACTIVE & VERIFIED</span>
+          </div>
         </div>
 
         <div className="divide-y divide-slate-200/60 dark:divide-[#3b4b37]/30 font-mono text-xs">
