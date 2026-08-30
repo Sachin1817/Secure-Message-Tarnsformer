@@ -25,18 +25,12 @@ export const EncryptScreen: React.FC = () => {
   const [mode, setMode] = useState<'passphrase' | 'preshared'>('passphrase');
   const [passphrase, setPassphrase] = useState('');
   const [showPassphrase, setShowPassphrase] = useState(false);
+  const [kdfMethod, setKdfMethod] = useState<'argon2id' | 'pbkdf2'>('argon2id');
   const [presharedKey, setPresharedKey] = useState('');
   
   // Carrier State: QR Code vs Steganography Image
   const [carrier, setCarrier] = useState<'qr' | 'stego'>('qr');
   const [randomCoverSrc, setRandomCoverSrc] = useState<string | null>(null);
-
-  // Passphrase Mode States
-  const [passphrase, setPassphrase] = useState('');
-  const [kdfMethod, setKdfMethod] = useState<'argon2id' | 'pbkdf2'>('argon2id');
-  
-  // Pre-shared Key States
-  const [presharedKey, setPresharedKey] = useState('');
 
   // General States
   const [burnAfterReading, setBurnAfterReading] = useState(false);
