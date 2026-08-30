@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, QrCode, ScanLine, Sun, Moon, Shield, LogIn, LogOut, Lock, RefreshCw, Settings, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, QrCode, ScanLine, Sun, Moon, Shield, LogIn, LogOut, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export type ActiveTab = 'dashboard' | 'encrypt' | 'decrypt' | 'about';

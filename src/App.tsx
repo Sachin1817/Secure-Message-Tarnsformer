@@ -9,7 +9,7 @@ import { CyberBackground3D } from './components/CyberBackground3D';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { LockScreen } from './components/LockScreen';
-import { Lock, KeyRound, Sparkles, ShieldCheck } from 'lucide-react';
+import { Lock, KeyRound, Sparkles, ShieldCheck, LayoutDashboard, QrCode } from 'lucide-react';
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');

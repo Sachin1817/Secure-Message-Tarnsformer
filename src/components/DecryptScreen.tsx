@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, RefreshCw, Flame, Download, Lock } from 'lucide-react';
+import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, RefreshCw, Download, Lock } from 'lucide-react';
 import { decryptBinary, unpackPayload, type DecryptedResult } from '../crypto/crypto';
 import { decodeQRCodeFromImageData } from '../qr/qr';
 import { decodeStegoFromImageData } from '../stego/stego';
@@ -30,7 +30,6 @@ export const DecryptScreen: React.FC = () => {
   const [copiedText, setCopiedText] = useState(false);
   
   // Timer States
-  const [clearTimer] = useState<number>(60); // 60 seconds default
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Burn Warnings
@@ -417,8 +416,15 @@ export const DecryptScreen: React.FC = () => {
                   </h2>
                 </div>
                 <p className="text-slate-500 dark:text-[#b9ccb2] text-xs">
-                  Encrypted payload detected. Enter passphrase to initialize decryption sequence.
+                  {payloadMetadata?.isPassphraseMode ? 'Passphrase-protected payload detected.' : 'Pre-shared key payload detected.'}
                 </p>
+
+                {showBurnWarning && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[11px] flex items-center gap-2 font-mono">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>Single-use payload was already read previously.</span>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <input
