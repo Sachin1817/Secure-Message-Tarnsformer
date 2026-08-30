@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Video, FileText, UploadCloud, Info, Cpu, Shield } from 'lucide-react';
+import { Key, Download, Copy, AlertTriangle, RefreshCw, Flame, Check, QrCode, Image as ImageIcon, Video, FileText, UploadCloud, Info, Cpu, Shield, Eye, EyeOff } from 'lucide-react';
 import { encryptBinary, packMediaData, generatePreSharedKey } from '../crypto/crypto';
 import { generateQRCode } from '../qr/qr';
 import { encodeStegoImage, generateRandomCoverImage } from '../stego/stego';
@@ -23,6 +23,9 @@ export const EncryptScreen: React.FC = () => {
 
   // Security mode: passphrase vs preshared
   const [mode, setMode] = useState<'passphrase' | 'preshared'>('passphrase');
+  const [passphrase, setPassphrase] = useState('');
+  const [showPassphrase, setShowPassphrase] = useState(false);
+  const [presharedKey, setPresharedKey] = useState('');
   
   // Carrier State: QR Code vs Steganography Image
   const [carrier, setCarrier] = useState<'qr' | 'stego'>('qr');
@@ -451,13 +454,23 @@ export const EncryptScreen: React.FC = () => {
                 <label className="text-slate-500 dark:text-[#b9ccb2] font-bold uppercase tracking-wider block">
                   Secret Passphrase
                 </label>
-                <input
-                  type="password"
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder="Enter high-entropy passphrase..."
-                  className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 text-xs sm:text-sm text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type={showPassphrase ? 'text' : 'password'}
+                    value={passphrase}
+                    onChange={(e) => setPassphrase(e.target.value)}
+                    placeholder="Enter high-entropy passphrase..."
+                    className="w-full bg-slate-50 dark:bg-[#131314] border border-slate-200 dark:border-[#3b4b37]/50 rounded-xl p-3 pr-10 text-xs sm:text-sm text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassphrase(!showPassphrase)}
+                    className="absolute right-3 text-slate-400 hover:text-[#00ff41] transition-colors p-1"
+                    title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+                  >
+                    {showPassphrase ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-2 font-mono text-xs">

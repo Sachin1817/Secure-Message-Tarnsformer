@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, RefreshCw, Download, Lock } from 'lucide-react';
+import { Shield, Scan, Upload, Key, Copy, AlertTriangle, Check, Trash2, RefreshCw, Download, Lock, Eye, EyeOff } from 'lucide-react';
 import { decryptBinary, unpackPayload, type DecryptedResult } from '../crypto/crypto';
 import { decodeQRCodeFromImageData } from '../qr/qr';
 import { decodeStegoFromImageData } from '../stego/stego';
@@ -19,6 +19,7 @@ export const DecryptScreen: React.FC = () => {
 
   // Decryption inputs
   const [secretInput, setSecretInput] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
   
   // Status states
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -424,14 +425,22 @@ export const DecryptScreen: React.FC = () => {
                   </div>
                 )}
 
-                <div className="space-y-1.5">
+                <div className="relative flex items-center">
                   <input
-                    type="password"
+                    type={showSecret ? 'text' : 'password'}
                     value={secretInput}
                     onChange={(e) => setSecretInput(e.target.value)}
                     placeholder="Enter passphrase..."
-                    className="w-full bg-slate-50 dark:bg-[#0e0e0f] border border-slate-200 dark:border-[#3b4b37]/60 rounded-xl p-3 text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border font-mono"
+                    className="w-full bg-slate-50 dark:bg-[#0e0e0f] border border-slate-200 dark:border-[#3b4b37]/60 rounded-xl p-3 pr-10 text-xs text-slate-800 dark:text-[#e5e2e3] focus:outline-none glow-border font-mono"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="absolute right-3 text-slate-400 hover:text-[#00daf3] transition-colors p-1"
+                    title={showSecret ? 'Hide secret' : 'Show secret'}
+                  >
+                    {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-slate-400" />}
+                  </button>
                 </div>
 
                 {decryptionError && (
